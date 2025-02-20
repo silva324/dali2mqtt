@@ -6,10 +6,10 @@ __author__ = "Diogo Gomes"
 __version__ = "0.0.3"
 __email__ = "diogogomes@gmail.com"
 
-HASSEB = "hasseb"
-TRIDONIC = "tridonic"
-DALI_SERVER = "dali_server"
-DALI_DRIVERS = [HASSEB, TRIDONIC, DALI_SERVER, "dummy"]
+HID_HASSEB = "hid_hasseb"
+HID_TRIDONIC = "hid_tridonic"
+
+DALI_DRIVERS = [HID_TRIDONIC, HID_HASSEB, "dummy"]
 
 CONF_CONFIG = "config"
 CONF_DEVICES_NAMES_FILE = "devices_names"
@@ -40,6 +40,9 @@ MQTT_COMMAND_TOPIC = "{}/{}/light/switch"
 MQTT_BRIGHTNESS_STATE_TOPIC = "{}/{}/light/brightness/status"
 MQTT_BRIGHTNESS_COMMAND_TOPIC = "{}/{}/light/brightness/set"
 MQTT_BRIGHTNESS_GET_COMMAND_TOPIC = "{}/{}/light/brightness/get"
+MQTT_COLOR_TEMP_STATE_TOPIC = "{}/{}/light/color_temp/status"
+MQTT_COLOR_TEMP_COMMAND_TOPIC = "{}/{}/light/color_temp/set"
+MQTT_COLOR_TEMP_GET_COMMAND_TOPIC = "{}/{}/light/color_temp/get"
 MQTT_SCAN_LAMPS_COMMAND_TOPIC = "{}/find"
 MQTT_BRIGHTNESS_MAX_LEVEL_TOPIC = "{}/{}/max_level"
 MQTT_BRIGHTNESS_MIN_LEVEL_TOPIC = "{}/{}/min_level"

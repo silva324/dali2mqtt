@@ -1,5 +1,7 @@
 ![pytest workflow](https://github.com/dgomes/dali2mqtt/actions/workflows/pytest.yml/badge.svg)
 
+
+
 # dali2mqtt
 DALI <-> MQTT bridge
 
@@ -17,19 +19,17 @@ This daemon relies in [python-dali](https://github.com/sde1000/python-dali) so a
 
 #### Install Operating System Dependencies
 
-#### Ubuntu/Debian/Raspian
-
-This is actually a python dependency, but will pull libhdiapi as a dependency
-
-```bash
-sudo apt-get install python3-hid
-```
+### Python3 library
+This package depends on https://github.com/trezor/cython-hidapi
 
 ### Create a Virtual Environment (recommended) and install the requirements
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+
+git clone https://github.com/rohanramaswamy/python-dali
+pip install -e python-dali/
 ```
 
 ### Create a configuration file

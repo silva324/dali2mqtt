@@ -9,7 +9,7 @@ StandardOutput=inherit
 StandardError=inherit
 Environment=PYTHONUNBUFFERED=true
 Restart=always
-User=homeassistant
+User=root
 
 [Install]
 WantedBy=multi-user.target

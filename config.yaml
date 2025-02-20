@@ -1,0 +1,8 @@
+dali_driver: hid_hasseb
+devices_names: devices.yaml
+ha_discovery_prefix: homeassistant
+log_color: true
+log_level: debug
+mqtt_base_topic: dali2mqtt
+mqtt_port: 1883
+mqtt_server: localhost

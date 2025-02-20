@@ -3,12 +3,17 @@ import json
 import logging
 
 import dali.gear.general as gear
+from dali.gear.sequences import SetDT8ColourValueTc, SetDT8TcLimit, QueryDT8ColourValue
+from dali.gear.colour import tc_kelvin_mirek, QueryColourValueDTR, QueryColourStatus, StoreColourTemperatureTcLimitDTR2
+
 from dali2mqtt.consts import (
     ALL_SUPPORTED_LOG_LEVELS,
     LOG_FORMAT,
     MQTT_AVAILABLE,
     MQTT_BRIGHTNESS_COMMAND_TOPIC,
     MQTT_BRIGHTNESS_STATE_TOPIC,
+    MQTT_COLOR_TEMP_COMMAND_TOPIC,
+    MQTT_COLOR_TEMP_STATE_TOPIC,
     MQTT_COMMAND_TOPIC,
     MQTT_DALI2MQTT_STATUS,
     MQTT_NOT_AVAILABLE,
@@ -39,14 +44,23 @@ class Lamp:
 
         self.device_name = slugify(friendly_name)
 
-        self.min_physical_level = driver.send(
-            gear.QueryPhysicalMinimum(short_address)
-        ).value
-        self.min_level = driver.send(gear.QueryMinLevel(short_address)).value
-        self.max_level = driver.send(gear.QueryMaxLevel(short_address)).value
-        self.level = driver.send(gear.QueryActualLevel(short_address)).value
-
         logger.setLevel(ALL_SUPPORTED_LOG_LEVELS[log_level])
+
+    async def init(self):
+        _min_physical_level = await self.driver.send(gear.QueryPhysicalMinimum(self.short_address))
+
+        try:
+            self.min_physical_level = _min_physical_level.value
+        except Exception as err:
+            self.min_physical_level = None
+            logger.warning("Set min_physical_level to None as %s failed: %s", _min_physical_level, err)
+        self.min_level = (await self.driver.send(gear.QueryMinLevel(self.short_address))).value
+        self.max_level = (await self.driver.send(gear.QueryMaxLevel(self.short_address))).value
+        self.__level = (await self.driver.send(gear.QueryActualLevel(self.short_address))).value
+        
+        self.tc_coolest = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTcCoolest))
+        self.tc_warmest = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTcWarmest))
+        self.__tc  = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTC))
 
     def gen_ha_config(self, mqtt_base_topic):
         """Generate a automatic configuration for Home Assistant."""
@@ -68,6 +82,16 @@ class Lamp:
             "avty_t": MQTT_DALI2MQTT_STATUS.format(mqtt_base_topic),
             "pl_avail": MQTT_AVAILABLE,
             "pl_not_avail": MQTT_NOT_AVAILABLE,
+            "brightness": "true",
+            "sup_clrm": ["color_temp"],
+            "clr_temp_stat_t": MQTT_COLOR_TEMP_STATE_TOPIC.format(
+                mqtt_base_topic, self.device_name
+            ),
+            "clr_temp_cmd_t": MQTT_COLOR_TEMP_COMMAND_TOPIC.format(
+                mqtt_base_topic, self.device_name
+            ),
+            "max_mirs": self.tc_warmest,
+            "min_mirs": self.tc_coolest,
             "device": {
                 "ids": "dali2mqtt",
                 "name": "DALI Lights",
@@ -78,29 +102,55 @@ class Lamp:
         }
         return json.dumps(json_config)
 
-    def actual_level(self):
+    async def get_level(self):
         """Retrieve actual level from ballast."""
-        self.__level = self.driver.send(gear.QueryActualLevel(self.short_address))
+        self.__level = await self.driver.send(gear.QueryActualLevel(self.short_address))
+        return self.__level
 
     @property
     def level(self):
         """Return brightness level."""
+        # logger.debug(
+        #     "Get lamp <%s> brightness level %s", self.friendly_name, self.__level
+        # )
         return self.__level
+    
+    @property
+    def tc(self):
+        """Return Color Temperature in mired."""
+        return self.__tc
 
-    @level.setter
-    def level(self, value):
+    # @level.setter
+    async def set_level(self, value):
         """Commit level to ballast."""
-        if not self.min_level <= value <= self.max_level and value != 0:
+        value_scaled  = int(self.min_level + (value) * ((self.max_level - self.min_level) / (254)))
+        if not self.min_level <= value_scaled <= self.max_level and value != 0:
             raise ValueError
         self.__level = value
-        self.driver.send(gear.DAPC(self.short_address, self.level))
+        await self.driver.send(gear.DAPC(self.short_address, value_scaled))
         logger.debug(
-            "Set lamp <%s> brightness level to %s", self.friendly_name, self.level
+            "Set lamp <%s> brightness level to %s, actual: %s", self.friendly_name, self.__level, value_scaled
+        )
+        
+    async def get_tc(self):
+        """Retrieve actual level from ballast."""
+        self.__tc  = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTC))
+        return self.__tc
+        
+    async def set_tc(self, value):
+        """Commit level to ballast."""
+        # value_scaled  = int(self.min_level + (value) * ((self.max_level - self.min_level) / (254)))
+        if not self.tc_coolest <= value <= self.tc_warmest and value != 0:
+            raise ValueError
+        self.__tc = value
+        await self.driver.run_sequence(SetDT8ColourValueTc(address=self.short_address, tc_mired=value))
+        logger.debug(
+            "Set lamp <%s> color temp to %s", self.friendly_name, self.__tc
         )
 
-    def off(self):
+    async def off(self):
         """Turn off ballast."""
-        self.driver.send(gear.Off(self.short_address))
+        await self.driver.send(gear.Off(self.short_address))
 
     def __str__(self):
         """Serialize lamp information."""
