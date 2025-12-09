@@ -1,0 +1,53 @@
+name: Sync from Gitea
+
+on:
+  schedule:
+    # Run twice per week: Monday and Thursday at 10 AM UTC
+    - cron: '0 10 * * 1,4'
+  workflow_dispatch: # Allow manual trigger
+    inputs:
+      sync_tags:
+        description: 'Sync TAGS from dgomes/dali2mqtt'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GIT_REPO: dgomes/dali2mqtt
+    steps:
+      - name: Checkout GitHub repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+      
+      - name: Add GitHub remote
+        run: |
+          git remote add fork_origin https://github.com/${{ env.GIT_REPO }}
+      
+      - name: Fetch from GitHub
+        run: |
+          git fetch fork_origin
+      
+      - name: Sync all branches to mirror namespace
+        run: |
+          # Get all branches from GitHub (exclude HEAD symbolic reference)
+          for branch in $(git branch -r | grep 'fork_origin/' | grep -v 'HEAD' | sed 's/fork_origin\///'); do
+            echo "Syncing branch: $branch"
+            # Fetch the branch from GitHub and push to GitHub with mirror/ prefix
+            git push origin "refs/remotes/fork_origin/$branch:refs/heads/mirror/$branch" --force
+          done
+      
+      - name: Sync all tags
+        if: github.event.inputs.sync_tags == 'true'
+        run: |
+          # Push all tags from Gitea to GitHub
+          git push origin --tags --force
