@@ -25,6 +25,18 @@ jobs:
         id: vars
         run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
+      - name: Set build metadata
+        run: |
+          VERSION="$GITHUB_REF_NAME"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            VERSION="$SHORT_SHA"
+          fi
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          VCS_REF="$SHORT_SHA"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_ENV"
+          echo "VCS_REF=$VCS_REF" >> "$GITHUB_ENV"
+
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -51,3 +63,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            VCS_REF=${{ env.SHORT_SHA }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+            SOURCE_URL=https://github.com/${{ github.repository }}

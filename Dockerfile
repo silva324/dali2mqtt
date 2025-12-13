@@ -23,6 +23,18 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Final stage - minimal runtime image
 FROM python:3.11-slim
 
+# OCI metadata (override via --build-arg)
+ARG VERSION=unknown
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+ARG SOURCE_URL=https://github.com/silva324/dali2mqtt
+LABEL org.opencontainers.image.title="dali2mqtt" \
+    org.opencontainers.image.description="DALI to MQTT bridge" \
+    org.opencontainers.image.version="${VERSION}" \
+    org.opencontainers.image.revision="${VCS_REF}" \
+    org.opencontainers.image.created="${BUILD_DATE}" \
+    org.opencontainers.image.source="${SOURCE_URL}"
+    
 # Install only runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libusb-1.0-0 \
