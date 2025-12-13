@@ -1,4 +1,4 @@
-name: Sync from Gitea
+name: Sync from dgomes/dali2mqtt
 
 on:
   schedule:
@@ -11,6 +11,10 @@ on:
         required: false
         default: false
         type: boolean
+
+# Allow pushing mirror branches back to this repository
+permissions:
+  contents: write
 
 jobs:
   sync:
