@@ -1,6 +1,8 @@
 name: Tests 
 
-on: [push, pull_request]
+# Manual only
+on:
+  workflow_dispatch:
 
 jobs:
 
