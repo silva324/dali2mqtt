@@ -2,15 +2,8 @@ name: Build and Publish Docker Image (ARM)
 
 on:
   push:
-    branches:
-      - master
-      - main
     tags:
       - 'v*.*.*'
-  pull_request:
-    branches:
-      - master
-      - main
   workflow_dispatch:
 
 env:
@@ -27,6 +20,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Capture short SHA
+        id: vars
+        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -48,11 +45,10 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch,suffix=-arm64
-            type=ref,event=pr,suffix=-arm64
             type=semver,pattern={{version}},suffix=-arm64
             type=semver,pattern={{major}}.{{minor}},suffix=-arm64
             type=raw,value=latest-arm64,enable={{is_default_branch}}
+            type=raw,value=${{ env.SHORT_SHA }}-arm64,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push Docker image for ARM64 (Raspberry Pi 4)
         uses: docker/build-push-action@v5
