@@ -15,6 +15,59 @@ This guide shows how to use the pre-built dali2mqtt Docker image from GitHub Con
 3. MQTT broker running (e.g., Mosquitto)
 4. Configuration files prepared
 
+## Install Docker on Raspberry Pi (RPi 3/4)
+
+Use these steps to install Docker on Raspberry Pi OS (Debian-based). Works on 32-bit and 64-bit; prefer 64-bit if you plan to use ARM64 images.
+
+### 1. Update the system
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+```
+
+### 2. Install Docker (official convenience script)
+
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+```
+
+### 3. Enable and start Docker
+
+```bash
+sudo systemctl enable docker
+sudo systemctl start docker
+```
+
+### 4. Allow your user to run Docker without sudo
+
+```bash
+sudo usermod -aG docker $USER
+``` 
+
+Log out of SSH and back in (or reboot) to apply group changes.
+
+### 5. Verify Docker is working
+
+```bash
+docker --version
+docker run --rm hello-world
+```
+
+### 6. Install Docker Compose v2 (plugin)
+
+Modern Docker uses the Compose V2 plugin (`docker compose`). If the command below fails, install the plugin.
+
+```bash
+docker compose version || sudo apt install -y docker-compose-plugin
+docker compose version
+```
+
+Notes:
+- Use `docker compose` (with a space) for Compose V2. The legacy `docker-compose` (hyphen) is deprecated.
+- On Raspberry Pi OS Bookworm, `docker-compose-plugin` is available via APT.
+
 ## Configuration Files
 
 ### 1. Create configuration directory
