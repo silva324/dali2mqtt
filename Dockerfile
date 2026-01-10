@@ -17,7 +17,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt /tmp/
-RUN pip install --no-cache-dir --upgrade pip && \
+RUN --mount=type=secret,id=GITHUB_TOKEN \
+    pip install --no-cache-dir --upgrade pip && \
+    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/" && \
     pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Final stage - minimal runtime image
