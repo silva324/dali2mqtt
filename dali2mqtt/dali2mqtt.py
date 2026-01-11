@@ -148,34 +148,45 @@ async def initialize_lamps(data_object, client):
             )
             await lamp_object.init()
 
-            data_object["all_lamps"][name] = lamp_object
+            # Store lamp using device_name (slugified) to match MQTT topic lookups
+            data_object["all_lamps"][lamp_object.device_name] = lamp_object
 
             mqtt_data = [
                 (
-                    HA_DISCOVERY_PREFIX.format(ha_prefix, name),
+                    HA_DISCOVERY_PREFIX.format(ha_prefix, lamp_object.device_name),
                     lamp_object.gen_ha_config(mqtt_base_topic),
                     True,
                 ),
                 (
-                    MQTT_BRIGHTNESS_STATE_TOPIC.format(mqtt_base_topic, name),
+                    MQTT_BRIGHTNESS_STATE_TOPIC.format(mqtt_base_topic, lamp_object.device_name),
                     lamp_object.level,
                     False,
                 ),
                 (
-                    MQTT_COLOR_TEMP_STATE_TOPIC.format(mqtt_base_topic, name),
-                    lamp_object.tc,
-                    False,
-                ),
-                (
-                    MQTT_STATE_TOPIC.format(mqtt_base_topic, name),
+                    MQTT_STATE_TOPIC.format(mqtt_base_topic, lamp_object.device_name),
                     MQTT_PAYLOAD_ON if lamp_object.level > 0 else MQTT_PAYLOAD_OFF,
                     False,
                 ),
             ]
+            
+            # Only publish color temp if lamp supports it
+            if lamp_object.tc is not None:
+                mqtt_data.append((
+                    MQTT_COLOR_TEMP_STATE_TOPIC.format(mqtt_base_topic, lamp_object.device_name),
+                    lamp_object.tc,
+                    False,
+                ))
+            
             for topic, payload, retain in mqtt_data:
-                client.publish(topic, payload, retain)
+                logger.debug("Publishing to topic: %s (retain=%s, payload_length=%d)", topic, retain, len(str(payload)))
+                result = client.publish(topic, payload, qos=1, retain=retain)
+                if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                    logger.error("Failed to publish to %s: %s", topic, result.rc)
+                else:
+                    logger.debug("Successfully published to %s", topic)
 
             logger.info(lamp_object)
+            logger.debug("Created lamp with device_name: %s, stored in all_lamps dict", lamp_object.device_name)
 
         except DALIError as err:
             logger.error("While initializing <%s> @ %s: %s", name, address, err)
@@ -193,12 +204,24 @@ async def initialize_lamps(data_object, client):
         logger.debug("Publishing group %d", group)
 
         group_address = address.Group(int(group))
+        
+        # Get friendly name from config for groups
+        group_friendly_name = devices_names_config.get_friendly_name(group, is_group=True)
 
-        await create_mqtt_lamp(group_address, f"group_{group}")
+        await create_mqtt_lamp(group_address, group_friendly_name)
 
-    if devices_names_config.is_devices_file_empty():
-        devices_names_config.save_devices_names_file(data_object["all_lamps"])
+    # Create broadcast group to control all lamps at once
+    logger.debug("Publishing broadcast group (all lamps)")
+    broadcast_address = address.Broadcast()
+    broadcast_friendly_name = devices_names_config.get_friendly_name("broadcast", is_group=True)
+    await create_mqtt_lamp(broadcast_address, broadcast_friendly_name)
+
+    # Always save devices file to add any new devices (merge mode)
+    devices_names_config.save_devices_names_file(data_object["all_lamps"])
+    
     logger.info("initialize_lamps finished")
+    logger.debug("Total lamps in all_lamps dict: %d", len(data_object["all_lamps"]))
+    logger.debug("Lamp device names: %s", list(data_object["all_lamps"].keys()))
 
 
 def on_detect_changes_in_config(mqtt_client):

@@ -1,0 +1,10 @@
+dali_driver: hid_tridonic
+devices_names: /app/config/devices.yaml
+ha_discovery_prefix: homeassistant
+log_color: false
+log_level: info
+mqtt_base_topic: dali2mqtt
+mqtt_password: dali#svc#sec
+mqtt_port: 1883
+mqtt_server: 192.168.88.250
+mqtt_username: svc_dali

@@ -2,6 +2,7 @@
 import json
 import logging
 
+import dali.address as address
 import dali.gear.general as gear
 from dali.gear.sequences import SetDT8ColourValueTc, SetDT8TcLimit, QueryDT8ColourValue
 from dali.gear.colour import tc_kelvin_mirek, QueryColourValueDTR, QueryColourStatus, StoreColourTemperatureTcLimitDTR2
@@ -47,27 +48,128 @@ class Lamp:
         logger.setLevel(ALL_SUPPORTED_LOG_LEVELS[log_level])
 
     async def init(self):
+        # Broadcast addresses cannot be queried, only commanded
+        # Set default values and skip all queries
+        if isinstance(self.short_address, address.Broadcast):
+            logger.info("Broadcast address detected, using default values (queries not supported)")
+            self.min_physical_level = 0
+            self.min_level = 0
+            self.max_level = 254
+            self.__level = 0
+            self.tc_coolest = None
+            self.tc_warmest = None
+            self.__tc = None
+            return
+        
         _min_physical_level = await self.driver.send(gear.QueryPhysicalMinimum(self.short_address))
 
         try:
-            self.min_physical_level = _min_physical_level.value
-        except Exception as err:
-            self.min_physical_level = None
-            logger.warning("Set min_physical_level to None as %s failed: %s", _min_physical_level, err)
-        self.min_level = (await self.driver.send(gear.QueryMinLevel(self.short_address))).value
-        self.max_level = (await self.driver.send(gear.QueryMaxLevel(self.short_address))).value
-        self.__level = (await self.driver.send(gear.QueryActualLevel(self.short_address))).value
+            self.min_physical_level = int(_min_physical_level.value)
+        except (ValueError, TypeError):
+            self.min_physical_level = 0
+            logger.warning("Set min_physical_level to 0 as %s returned non-numeric value", _min_physical_level)
         
-        self.tc_coolest = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTcCoolest))
-        self.tc_warmest = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTcWarmest))
-        self.__tc  = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTC))
+        # Query min and max levels with error handling
+        try:
+            min_level_response = await self.driver.send(gear.QueryMinLevel(self.short_address))
+            self.min_level = int(min_level_response.value)
+        except (ValueError, TypeError):
+            self.min_level = 0
+            logger.warning("Set min_level to 0 due to non-numeric response")
+            
+        try:
+            max_level_response = await self.driver.send(gear.QueryMaxLevel(self.short_address))
+            self.max_level = int(max_level_response.value)
+        except (ValueError, TypeError):
+            self.max_level = 254
+            logger.warning("Set max_level to 254 due to non-numeric response")
+        
+        # Query actual level and handle special DALI responses like 'MASK'
+        # MASK means lamp is in transition - retry with increasing delays
+        # For DT8 devices, may need to query target level instead
+        import asyncio
+        max_retries = 3
+        retry_delays = [0.2, 0.3, 0.5]  # Increasing delays in seconds
+        
+        for attempt in range(max_retries):
+            level_response = (await self.driver.send(gear.QueryActualLevel(self.short_address))).value
+            try:
+                self.__level = int(level_response)
+                break  # Success, exit retry loop
+            except (ValueError, TypeError):
+                address_str = getattr(self.short_address, 'address', getattr(self.short_address, 'group', self.short_address))
+                if str(level_response) == 'MASK':
+                    if attempt < max_retries - 1:
+                        logger.debug("Lamp %s returned MASK (attempt %d/%d), retrying...", address_str, attempt + 1, max_retries)
+                        await asyncio.sleep(retry_delays[attempt])
+                    else:
+                        # Last attempt: try querying target level instead (works better for DT8)
+                        logger.debug("Lamp %s still MASK, trying target level query...", address_str)
+                        target_response = (await self.driver.send(gear.QueryContentDTR0(self.short_address))).value
+                        try:
+                            self.__level = int(target_response)
+                            logger.debug("Lamp %s target level query succeeded: %s", address_str, self.__level)
+                            break
+                        except (ValueError, TypeError):
+                            # If target level also fails, query last active level
+                            logger.debug("Lamp %s trying last active level...", address_str)
+                            last_level_response = (await self.driver.send(gear.QueryLastActiveLevel(self.short_address))).value
+                            try:
+                                self.__level = int(last_level_response)
+                                logger.debug("Lamp %s last active level: %s", address_str, self.__level)
+                            except (ValueError, TypeError):
+                                logger.warning("Lamp %s: all query methods failed, defaulting to 254", address_str)
+                                self.__level = 254  # Assume on if we can't read it
+                else:
+                    logger.warning("Lamp %s returned non-numeric level: %s, defaulting to 0", address_str, level_response)
+                    self.__level = 0
+                    break
+        
+        # Query color temperature support (DT8 devices)
+        # Add small delay after level query for device stability
+        await asyncio.sleep(0.1)
+        
+        try:
+            tc_coolest_response = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTcCoolest))
+            tc_warmest_response = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTcWarmest))
+            tc_response = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTC))
+            
+            # Extract values and check if color temp is supported
+            self.tc_coolest = int(tc_coolest_response) if tc_coolest_response is not None else None
+            self.tc_warmest = int(tc_warmest_response) if tc_warmest_response is not None else None
+            self.__tc = int(tc_response) if tc_response is not None else None
+            
+            # If any value is invalid, disable color temp support
+            if self.tc_coolest is None or self.tc_warmest is None or self.tc_coolest == 0 or self.tc_warmest == 0:
+                self.tc_coolest = None
+                self.tc_warmest = None
+                self.__tc = None
+            else:
+                logger.debug("Lamp %s supports color temp: %s-%s mired, current: %s", 
+                           getattr(self.short_address, 'address', self.short_address),
+                           self.tc_coolest, self.tc_warmest, self.__tc)
+        except Exception as err:
+            logger.debug("Lamp %s doesn't support color temperature: %s", getattr(self.short_address, 'address', self.short_address), err)
+            self.tc_coolest = None
+            self.tc_warmest = None
+            self.__tc = None
 
     def gen_ha_config(self, mqtt_base_topic):
         """Generate a automatic configuration for Home Assistant."""
+        # Generate proper unique ID for lamps, groups, and broadcast
+        if hasattr(self.short_address, 'address'):
+            unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}"
+        elif hasattr(self.short_address, 'group'):
+            unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}"
+        elif str(type(self.short_address).__name__) == 'Broadcast':
+            unique_id = f"{type(self.driver).__name__}_broadcast"
+        else:
+            unique_id = f"{type(self.driver).__name__}_{self.device_name}"
+        
         json_config = {
             "name": self.friendly_name,
             "def_ent_id": f"dali_light_{self.device_name}",
-            "uniq_id": f"{type(self.driver).__name__}_{self.short_address}",
+            "uniq_id": unique_id,
             "stat_t": MQTT_STATE_TOPIC.format(mqtt_base_topic, self.device_name),
             "cmd_t": MQTT_COMMAND_TOPIC.format(mqtt_base_topic, self.device_name),
             "pl_off": MQTT_PAYLOAD_OFF.decode("utf-8"),
@@ -83,15 +185,6 @@ class Lamp:
             "pl_avail": MQTT_AVAILABLE,
             "pl_not_avail": MQTT_NOT_AVAILABLE,
             "brightness": "true",
-            "sup_clrm": ["color_temp"],
-            "clr_temp_stat_t": MQTT_COLOR_TEMP_STATE_TOPIC.format(
-                mqtt_base_topic, self.device_name
-            ),
-            "clr_temp_cmd_t": MQTT_COLOR_TEMP_COMMAND_TOPIC.format(
-                mqtt_base_topic, self.device_name
-            ),
-            "max_mirs": self.tc_warmest,
-            "min_mirs": self.tc_coolest,
             "device": {
                 "ids": "dali2mqtt",
                 "name": "DALI Lights",
@@ -100,11 +193,40 @@ class Lamp:
                 "mf": "dali2mqtt",
             },
         }
+        
+        # Add color temperature support only if lamp supports it
+        if self.tc_coolest is not None and self.tc_warmest is not None:
+            json_config["sup_clrm"] = ["color_temp"]
+            json_config["clr_temp_stat_t"] = MQTT_COLOR_TEMP_STATE_TOPIC.format(mqtt_base_topic, self.device_name)
+            json_config["clr_temp_cmd_t"] = MQTT_COLOR_TEMP_COMMAND_TOPIC.format(mqtt_base_topic, self.device_name)
+            json_config["max_mirs"] = self.tc_warmest
+            json_config["min_mirs"] = self.tc_coolest
+        
         return json.dumps(json_config)
 
     async def get_level(self):
         """Retrieve actual level from ballast."""
-        self.__level = await self.driver.send(gear.QueryActualLevel(self.short_address))
+        import asyncio
+        max_retries = 2
+        
+        for attempt in range(max_retries):
+            response = await self.driver.send(gear.QueryActualLevel(self.short_address))
+            try:
+                self.__level = int(response.value)
+                return self.__level
+            except (ValueError, TypeError):
+                address_str = getattr(self.short_address, 'address', getattr(self.short_address, 'group', self.short_address))
+                if str(response.value) == 'MASK':
+                    if attempt < max_retries - 1:
+                        logger.debug("Lamp %s returned MASK, retrying...", address_str)
+                        await asyncio.sleep(0.2)
+                    else:
+                        logger.debug("Lamp %s still in transition after retries, using cached value", address_str)
+                        # Keep existing __level value
+                else:
+                    logger.warning("Lamp %s returned non-numeric level: %s, keeping cached value", address_str, response.value)
+                    break
+        
         return self.__level
 
     @property
@@ -154,8 +276,18 @@ class Lamp:
 
     def __str__(self):
         """Serialize lamp information."""
+        # Handle GearShort (has .address), GearGroup (has .group), and Broadcast addresses
+        if hasattr(self.short_address, 'address'):
+            address_value = self.short_address.address
+        elif hasattr(self.short_address, 'group'):
+            address_value = self.short_address.group
+        elif str(type(self.short_address).__name__) == 'Broadcast':
+            address_value = 'broadcast'
+        else:
+            address_value = str(self.short_address)
+        
         return (
-            f"{self.device_name} - address: {self.short_address.address}, "
+            f"{self.device_name} - address: {address_value}, "
             f"actual brightness level: {self.level} (minimum: {self.min_level}, "
             f"max: {self.max_level}, physical minimum: {self.min_physical_level})"
         )
