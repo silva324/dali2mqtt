@@ -1,5 +1,6 @@
 """Class to represent dali lamps."""
 import json
+import asyncio
 import logging
 
 import dali.address as address
@@ -48,28 +49,38 @@ class Lamp:
         logger.setLevel(ALL_SUPPORTED_LOG_LEVELS[log_level])
 
     async def init(self):
+        """Initialize the lamp by querying its status and capabilities."""
         # Broadcast addresses cannot be queried, only commanded
-        # Set default values and skip all queries
         if isinstance(self.short_address, address.Broadcast):
             logger.info("Broadcast address detected, using default values (queries not supported)")
-            self.min_physical_level = 0
-            self.min_level = 0
-            self.max_level = 254
-            self.__level = 0
-            self.tc_coolest = None
-            self.tc_warmest = None
-            self.__tc = None
+            self._initialize_default_values()
             return
         
-        _min_physical_level = await self.driver.send(gear.QueryPhysicalMinimum(self.short_address))
+        await self._initialize_limits()
+        await self._get_actual_level()
+        await self._initialize_color_temperature()
 
+    def _initialize_default_values(self):
+        """Set default values when queries are not possible."""
+        self.min_physical_level = 0
+        self.min_level = 0
+        self.max_level = 254
+        self.__level = 0
+        self.tc_coolest = None
+        self.tc_warmest = None
+        self.__tc = None
+
+    async def _initialize_limits(self):
+        """Query physical minimum, min level, and max level."""
+        # Query physical minimum
+        _min_physical_level = await self.driver.send(gear.QueryPhysicalMinimum(self.short_address))
         try:
             self.min_physical_level = int(_min_physical_level.value)
         except (ValueError, TypeError):
             self.min_physical_level = 0
             logger.warning("Set min_physical_level to 0 as %s returned non-numeric value", _min_physical_level)
         
-        # Query min and max levels with error handling
+        # Query min level
         try:
             min_level_response = await self.driver.send(gear.QueryMinLevel(self.short_address))
             self.min_level = int(min_level_response.value)
@@ -77,16 +88,18 @@ class Lamp:
             self.min_level = 0
             logger.warning("Set min_level to 0 due to non-numeric response")
             
+        # Query max level
         try:
             max_level_response = await self.driver.send(gear.QueryMaxLevel(self.short_address))
             self.max_level = int(max_level_response.value)
         except (ValueError, TypeError):
             self.max_level = 254
             logger.warning("Set max_level to 254 due to non-numeric response")
-        
-        # 1. Check Status to see if lamp is actually ON
-        # Bit 2 of status byte indicates 'Lamp On'
+
+    async def _get_actual_level(self):
+        """Determine if lamp is ON and query its actual level with retries."""
         try:
+            # Bit 2 of status byte indicates 'Lamp On'
             status_resp = await self.driver.send(gear.QueryStatus(self.short_address))
             status_byte = status_resp.value.as_integer
             lamp_on = (status_byte & 0x04) != 0
@@ -96,40 +109,45 @@ class Lamp:
             if not lamp_on:
                 logger.debug("Lamp %s is OFF (Status Bit 2 is 0)", address_str)
                 self.__level = 0
-            else:
-                # Lamp is ON, query actual level
-                import asyncio
-                max_retries = 3
-                retry_delays = [0.2, 0.4, 0.8]
-                
-                # If fade is running, might get MASK, so wait a bit first
-                if fade_running:
-                     logger.debug("Lamp %s Fade Running (Status Bit 4), waiting...", address_str)
-                     await asyncio.sleep(0.5)
+                return
 
-                for attempt in range(max_retries):
-                    level_response = (await self.driver.send(gear.QueryActualLevel(self.short_address))).value
-                    try:
-                        self.__level = int(level_response)
-                        break
-                    except (ValueError, TypeError):
-                        if str(level_response) == 'MASK':
-                            if attempt < max_retries - 1:
-                                logger.debug("Lamp %s returned MASK (attempt %d), retrying...", address_str, attempt+1)
-                                await asyncio.sleep(retry_delays[attempt])
-                            else:
-                                logger.warning("Lamp %s MASK persists. Status says ON, defaulting to 254", address_str)
-                                self.__level = 254 # Assume full brightness if we know it's ON but can't read level
-                        else:
-                            self.__level = 254 # Fallback for non-numeric if ON
-                            logger.warning("Lamp %s invalid level '%s' but Lamp is ON, defaulting to 254", address_str, level_response)
-                            break
-                            
+            # Lamp is ON, query actual level
+            await self._query_actual_level_with_retry(address_str, fade_running)
+
         except Exception as err:
             logger.warning("Failed to query status/level for %s: %s", getattr(self.short_address, 'address', self.short_address), err)
             self.__level = 0
+
+    async def _query_actual_level_with_retry(self, address_str, fade_running):
+        """Query actual level with retry logic for MASK responses."""
+        max_retries = 3
+        retry_delays = [0.2, 0.4, 0.8]
         
-        # Query color temperature support (DT8 devices)
+        # If fade is running, might get MASK, so wait a bit first
+        if fade_running:
+             logger.debug("Lamp %s Fade Running (Status Bit 4), waiting...", address_str)
+             await asyncio.sleep(0.5)
+
+        for attempt in range(max_retries):
+            level_response = (await self.driver.send(gear.QueryActualLevel(self.short_address))).value
+            try:
+                self.__level = int(level_response)
+                return
+            except (ValueError, TypeError):
+                if str(level_response) == 'MASK':
+                    if attempt < max_retries - 1:
+                        logger.debug("Lamp %s returned MASK (attempt %d), retrying...", address_str, attempt+1)
+                        await asyncio.sleep(retry_delays[attempt])
+                    else:
+                        logger.warning("Lamp %s MASK persists. Status says ON, defaulting to 254", address_str)
+                        self.__level = 254 # Assume full brightness if we know it's ON but can't read level
+                else:
+                    self.__level = 254 # Fallback for non-numeric if ON
+                    logger.warning("Lamp %s invalid level '%s' but Lamp is ON, defaulting to 254", address_str, level_response)
+                    return
+
+    async def _initialize_color_temperature(self):
+        """Query color temperature capabilities (DT8)."""
         # Add small delay after level query for device stability
         await asyncio.sleep(0.1)
         
