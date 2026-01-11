@@ -292,9 +292,18 @@ class Lamp:
             "Set lamp <%s> color temp to %s", self.friendly_name, self.__tc
         )
 
+    def set_level_local(self, value):
+        """Set cached level without sending DALI commands."""
+        self.__level = value
+
+    def set_tc_local(self, value):
+        """Set cached color temp without sending DALI commands."""
+        self.__tc = value
+
     async def off(self):
         """Turn off ballast."""
         await self.driver.send(gear.Off(self.short_address))
+        self.__level = 0
 
     def __str__(self):
         """Serialize lamp information."""

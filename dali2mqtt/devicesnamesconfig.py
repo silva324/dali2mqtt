@@ -46,7 +46,7 @@ class DevicesNamesConfig:
                 self._path,
             )
 
-    def save_devices_names_file(self, all_lamps):
+    def save_devices_names_file(self, all_lamps, groups_info=None):
         """Save configuration back to yaml file (merge mode - add new, keep existing)."""
         # Load existing config to preserve custom names
         existing_devices = dict(self._devices_names) if self._devices_names else {}
@@ -57,6 +57,7 @@ class DevicesNamesConfig:
         new_devices_added = 0
         for lamp_object in all_lamps.values():
             # Handle GearShort (has .address), GearGroup (has .group), and Broadcast addresses
+            is_group = False
             if hasattr(lamp_object.short_address, 'address'):
                 address_value = lamp_object.short_address.address
                 config_key = str(address_value)
@@ -65,20 +66,34 @@ class DevicesNamesConfig:
                 address_value = lamp_object.short_address.group
                 config_key = f"group_{address_value}"
                 default_name = f"group_{address_value}"
+                is_group = True
             elif str(type(lamp_object.short_address).__name__) == 'Broadcast':
                 config_key = "group_broadcast"
                 default_name = "All Lights"
+                is_group = True
             else:
                 continue
             
-            # Only add if not already in config (preserves custom names)
+            # Use setdefault to ensure entry exists without overwriting friendly_name
             if config_key not in existing_devices:
-                existing_devices[config_key] = {
-                    "friendly_name": default_name
-                }
+                existing_devices[config_key] = {"friendly_name": default_name}
                 new_devices_added += 1
                 logger.info("Added new device %s to devices.yaml", config_key)
-        
+
+            # If it's a group and we have info about members, update the list
+            if is_group and groups_info:
+                if config_key == "group_broadcast":
+                    # For broadcast, we can infer it's all simple lamps
+                    # We can iterate all_lamps again or just pass it in. 
+                    # Simpler strategy: groups_info should carry broadcast too if possible, 
+                    # but typically 'scan_groups' only returns 0-15.
+                    # Let's handle regular groups first.
+                    pass
+                elif hasattr(lamp_object.short_address, 'group'):
+                     gid = lamp_object.short_address.group
+                     if gid in groups_info:
+                         existing_devices[config_key]["lamps"] = groups_info[gid]
+
         if new_devices_added == 0:
             logger.info("No new devices to add to %s", self._path)
         else:

@@ -200,6 +200,21 @@ async def initialize_lamps(data_object, client):
         )
 
     groups = await scan_groups(driver, lamps)
+    
+    # Map for group/broadcast updates
+    data_object["group_members"] = {}
+    
+    # Create mapping of integer address to Lamp object for lookups
+    # Helper to get integer address from short_address (which can necessarily be obtained from the object)
+    address_to_lamp = {}
+    for lamp_obj in data_object["all_lamps"].values():
+        if isinstance(lamp_obj.short_address, address.Short):
+            # dali.address.Short has .address accessible (lines 60+)
+            # But checking source code of python-dali might be safer, but previous code uses .address
+             address_to_lamp[lamp_obj.short_address.address] = lamp_obj
+        elif isinstance(lamp_obj.short_address, address.GearShort):
+             address_to_lamp[lamp_obj.short_address.address] = lamp_obj
+
     for group in groups:
         logger.debug("Publishing group %d", group)
 
@@ -210,14 +225,23 @@ async def initialize_lamps(data_object, client):
 
         await create_mqtt_lamp(group_address, group_friendly_name)
 
+        # Store group members
+        data_object["group_members"][group] = []
+        for individual_lamp_address in groups[group]:
+            if individual_lamp_address in address_to_lamp:
+                data_object["group_members"][group].append(address_to_lamp[individual_lamp_address])
+
     # Create broadcast group to control all lamps at once
     logger.debug("Publishing broadcast group (all lamps)")
     broadcast_address = address.Broadcast()
     broadcast_friendly_name = devices_names_config.get_friendly_name("broadcast", is_group=True)
     await create_mqtt_lamp(broadcast_address, broadcast_friendly_name)
+    
+    # Store broadcast members (all lamps)
+    data_object["group_members"]["broadcast"] = list(address_to_lamp.values())
 
-    # Always save devices file to add any new devices (merge mode)
-    devices_names_config.save_devices_names_file(data_object["all_lamps"])
+    # Always save devices file to add any new devices (merge mode) and update group members
+    devices_names_config.save_devices_names_file(data_object["all_lamps"], groups)
     
     logger.info("initialize_lamps finished")
     logger.debug("Total lamps in all_lamps dict: %d", len(data_object["all_lamps"]))
@@ -253,6 +277,31 @@ async def on_message_cmd(mqtt_client, data_object, msg):
                 MQTT_PAYLOAD_OFF,
                 retain=True,
             )
+
+            # If this is a group/broadcast, update members in MQTT
+            members = []
+            if "group_" in light:
+                group_match = re.search(r"group_(\d+)", light)
+                if group_match:
+                     group_id = int(group_match.group(1))
+                     members = data_object["group_members"].get(group_id, [])
+            elif "broadcast" in light:
+                 members = data_object["group_members"].get("broadcast", [])
+            
+            for member in members:
+                # Update internal state locally
+                member.set_level_local(0)
+                mqtt_client.publish(
+                    MQTT_STATE_TOPIC.format(data_object["base_topic"], member.device_name),
+                    MQTT_PAYLOAD_OFF,
+                    retain=True,
+                )
+                mqtt_client.publish(
+                   MQTT_BRIGHTNESS_STATE_TOPIC.format(data_object["base_topic"], member.device_name),
+                   0,
+                   retain=True
+                )
+
         except DALIError as err:
             logger.error("Failed to set light <%s> to OFF: %s", light, err)
         except KeyError:
@@ -296,7 +345,8 @@ async def on_message_brightness_cmd(mqtt_client, data_object, msg):
         lamp_object = get_lamp_object(data_object, light)
 
         try:
-            await lamp_object.set_level(int(msg.payload.decode("utf-8")))
+            target_level = int(msg.payload.decode("utf-8"))
+            await lamp_object.set_level(target_level)
             print(lamp_object.level)
             if lamp_object.level == 0:
                 # 0 in DALI is turn off with fade out
@@ -313,6 +363,31 @@ async def on_message_brightness_cmd(mqtt_client, data_object, msg):
                 lamp_object.level,
                 retain=True,
             )
+
+            # If this is a group/broadcast, update members in MQTT
+            members = []
+            if "group_" in light:
+                group_match = re.search(r"group_(\d+)", light)
+                if group_match:
+                     group_id = int(group_match.group(1))
+                     members = data_object["group_members"].get(group_id, [])
+            elif "broadcast" in light:
+                 members = data_object["group_members"].get("broadcast", [])
+            
+            for member in members:
+                member.set_level_local(lamp_object.level) 
+                
+                mqtt_client.publish(
+                    MQTT_STATE_TOPIC.format(data_object["base_topic"], member.device_name),
+                    MQTT_PAYLOAD_ON if member.level != 0 else MQTT_PAYLOAD_OFF,
+                    retain=True,
+                )
+                mqtt_client.publish(
+                    MQTT_BRIGHTNESS_STATE_TOPIC.format(data_object["base_topic"], member.device_name),
+                    member.level,
+                    retain=True
+                )
+
         except ValueError as err:
             logger.error(
                 "Can't convert <%s> to integer %d..%d: %s",
@@ -339,13 +414,36 @@ async def on_message_tc_cmd(mqtt_client, data_object, msg):
         lamp_object = get_lamp_object(data_object, light)
 
         try:
-            await lamp_object.set_tc(int(msg.payload.decode("utf-8")))
+            target_tc = int(msg.payload.decode("utf-8"))
+            await lamp_object.set_tc(target_tc)
             
             mqtt_client.publish(
                 MQTT_COLOR_TEMP_STATE_TOPIC.format(data_object["base_topic"], light),
                 lamp_object.tc,
                 retain=True,
             )
+
+            # If this is a group/broadcast, update members in MQTT
+            members = []
+            if "group_" in light:
+                group_match = re.search(r"group_(\d+)", light)
+                if group_match:
+                     group_id = int(group_match.group(1))
+                     members = data_object["group_members"].get(group_id, [])
+            elif "broadcast" in light:
+                 members = data_object["group_members"].get("broadcast", [])
+            
+            for member in members:
+                # Only update if the member supports color temperature
+                if member.tc_coolest is not None and member.tc_warmest is not None:
+                    member.set_tc_local(lamp_object.tc)
+                    
+                    mqtt_client.publish(
+                        MQTT_COLOR_TEMP_STATE_TOPIC.format(data_object["base_topic"], member.device_name),
+                        member.tc,
+                        retain=True,
+                    )
+
         except ValueError as err:
             logger.error(
                 "Can't convert <%s> to integer %d..%d: %s",
