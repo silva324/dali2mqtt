@@ -49,6 +49,10 @@ from dali2mqtt.consts import (
     MQTT_BRIGHTNESS_STATE_TOPIC,
     MQTT_COLOR_TEMP_COMMAND_TOPIC,
     MQTT_COLOR_TEMP_STATE_TOPIC,
+    MQTT_FADE_TIME_STATE_TOPIC,
+    MQTT_FADE_TIME_COMMAND_TOPIC,
+    MQTT_FADE_RATE_STATE_TOPIC,
+    MQTT_FADE_RATE_COMMAND_TOPIC,
     MQTT_COMMAND_TOPIC,
     MQTT_DALI2MQTT_STATUS,
     MQTT_NOT_AVAILABLE,
@@ -176,6 +180,30 @@ async def initialize_lamps(data_object, client):
                     lamp_object.tc,
                     False,
                 ))
+
+            # Publish Fade Time and Rate
+            mqtt_data.extend([
+                (
+                    HA_DISCOVERY_PREFIX.format(ha_prefix, f"{lamp_object.device_name}_fadetime"),
+                    lamp_object.gen_ha_config_fade_time(mqtt_base_topic),
+                    True,
+                ),
+                (
+                    MQTT_FADE_TIME_STATE_TOPIC.format(mqtt_base_topic, lamp_object.device_name),
+                    lamp_object.fade_time,
+                    False,
+                ),
+                (
+                    HA_DISCOVERY_PREFIX.format(ha_prefix, f"{lamp_object.device_name}_faderate"),
+                    lamp_object.gen_ha_config_fade_rate(mqtt_base_topic),
+                    True,
+                ),
+                (
+                    MQTT_FADE_RATE_STATE_TOPIC.format(mqtt_base_topic, lamp_object.device_name),
+                    lamp_object.fade_rate,
+                    False,
+                ),
+            ])
             
             for topic, payload, retain in mqtt_data:
                 logger.debug("Publishing to topic: %s (retain=%s, payload_length=%d)", topic, retain, len(str(payload)))
@@ -455,6 +483,58 @@ async def on_message_tc_cmd(mqtt_client, data_object, msg):
     except KeyError:
         logger.error("Lamp %s doesn't exists", light)
 
+def on_message_fade_time_cmd_callback(mqtt_client, data_object, msg, loop):
+    logger.info("on_message_fade_time_cmd_callback")
+    loop.create_task(on_message_fade_time_cmd(mqtt_client, data_object, msg))
+
+async def on_message_fade_time_cmd(mqtt_client, data_object, msg):
+    """Callback on MQTT Fade Time command message."""
+    logger.debug("Fade Time Command on %s: %s", msg.topic, msg.payload)
+    light = re.search(
+        MQTT_FADE_TIME_COMMAND_TOPIC.format(data_object["base_topic"], "(.+?)"),
+        msg.topic,
+    ).group(1)
+    try:
+        lamp_object = get_lamp_object(data_object, light)
+        target_val = int(msg.payload.decode("utf-8"))
+        await lamp_object.set_fade_time(target_val)
+        
+        mqtt_client.publish(
+            MQTT_FADE_TIME_STATE_TOPIC.format(data_object["base_topic"], light),
+            lamp_object.fade_time,
+            retain=True,
+        )
+    except ValueError as err:
+         logger.error("Error setting fade time: %s", err)
+    except KeyError:
+        logger.error("Lamp %s doesn't exists", light)
+
+def on_message_fade_rate_cmd_callback(mqtt_client, data_object, msg, loop):
+    logger.info("on_message_fade_rate_cmd_callback")
+    loop.create_task(on_message_fade_rate_cmd(mqtt_client, data_object, msg))
+
+async def on_message_fade_rate_cmd(mqtt_client, data_object, msg):
+    """Callback on MQTT Fade Rate command message."""
+    logger.debug("Fade Rate Command on %s: %s", msg.topic, msg.payload)
+    light = re.search(
+        MQTT_FADE_RATE_COMMAND_TOPIC.format(data_object["base_topic"], "(.+?)"),
+        msg.topic,
+    ).group(1)
+    try:
+        lamp_object = get_lamp_object(data_object, light)
+        target_val = int(msg.payload.decode("utf-8"))
+        await lamp_object.set_fade_rate(target_val)
+        
+        mqtt_client.publish(
+            MQTT_FADE_RATE_STATE_TOPIC.format(data_object["base_topic"], light),
+            lamp_object.fade_rate,
+            retain=True,
+        )
+    except ValueError as err:
+         logger.error("Error setting fade rate: %s", err)
+    except KeyError:
+        logger.error("Lamp %s doesn't exists", light)
+
 
 def on_message(mqtt_client, data_object, msg):  # pylint: disable=W0613
     """Default callback on MQTT message."""
@@ -475,6 +555,8 @@ async def on_connect(
             (MQTT_COMMAND_TOPIC.format(mqtt_base_topic, "+"), 0),
             (MQTT_BRIGHTNESS_COMMAND_TOPIC.format(mqtt_base_topic, "+"), 0),
             (MQTT_COLOR_TEMP_COMMAND_TOPIC.format(mqtt_base_topic, "+"), 0),
+            (MQTT_FADE_TIME_COMMAND_TOPIC.format(mqtt_base_topic, "+"), 0),
+            (MQTT_FADE_RATE_COMMAND_TOPIC.format(mqtt_base_topic, "+"), 0),
             (MQTT_SCAN_LAMPS_COMMAND_TOPIC.format(mqtt_base_topic), 0),
         ]
     )
@@ -536,6 +618,16 @@ async def create_mqtt_client(
     mqttc.message_callback_add(
         MQTT_COLOR_TEMP_COMMAND_TOPIC.format(mqtt_base_topic, "+"),
         lambda a,b,c : on_message_tc_cmd_callback(a,b,c,loop),
+    )
+    
+    mqttc.message_callback_add(
+        MQTT_FADE_TIME_COMMAND_TOPIC.format(mqtt_base_topic, "+"),
+        lambda a,b,c : on_message_fade_time_cmd_callback(a,b,c,loop),
+    )
+    
+    mqttc.message_callback_add(
+        MQTT_FADE_RATE_COMMAND_TOPIC.format(mqtt_base_topic, "+"),
+        lambda a,b,c : on_message_fade_rate_cmd_callback(a,b,c,loop),
     )
     
     mqttc.message_callback_add(

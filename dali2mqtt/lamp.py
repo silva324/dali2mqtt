@@ -6,7 +6,12 @@ import logging
 import dali.address as address
 import dali.gear.general as gear
 from dali.gear.sequences import SetDT8ColourValueTc, SetDT8TcLimit, QueryDT8ColourValue
-from dali.gear.colour import tc_kelvin_mirek, QueryColourValueDTR, QueryColourStatus, StoreColourTemperatureTcLimitDTR2
+from dali.gear.colour import (
+    tc_kelvin_mirek, 
+    QueryColourValueDTR, 
+    QueryColourStatus, 
+    StoreColourTemperatureTcLimitDTR2,
+)
 
 from dali2mqtt.consts import (
     ALL_SUPPORTED_LOG_LEVELS,
@@ -16,6 +21,10 @@ from dali2mqtt.consts import (
     MQTT_BRIGHTNESS_STATE_TOPIC,
     MQTT_COLOR_TEMP_COMMAND_TOPIC,
     MQTT_COLOR_TEMP_STATE_TOPIC,
+    MQTT_FADE_TIME_STATE_TOPIC,
+    MQTT_FADE_TIME_COMMAND_TOPIC,
+    MQTT_FADE_RATE_STATE_TOPIC,
+    MQTT_FADE_RATE_COMMAND_TOPIC,
     MQTT_COMMAND_TOPIC,
     MQTT_DALI2MQTT_STATUS,
     MQTT_NOT_AVAILABLE,
@@ -57,6 +66,7 @@ class Lamp:
             return
         
         await self._initialize_limits()
+        await self._initialize_fade_settings()
         await self._get_actual_level()
         await self._initialize_color_temperature()
 
@@ -69,6 +79,8 @@ class Lamp:
         self.tc_coolest = None
         self.tc_warmest = None
         self.__tc = None
+        self.fade_time = 0
+        self.fade_rate = 0
 
     async def _initialize_limits(self):
         """Query physical minimum, min level, and max level."""
@@ -95,6 +107,26 @@ class Lamp:
         except (ValueError, TypeError):
             self.max_level = 254
             logger.warning("Set max_level to 254 due to non-numeric response")
+
+    async def _initialize_fade_settings(self):
+        """Query fade time and fade rate."""
+        try:
+           response = await self.driver.send(gear.QueryFadeTimeFadeRate(self.short_address))
+           # The response object has .fade_time and .fade_rate properties
+           # But they return integers from 1-15 (encoded).
+           # We need to access the byte values from the response if possible, 
+           # or trust the library implementation.
+           # Checking library Source: QueryFadeTimeAndRateResponse has props that return value slices.
+           # Let's check what they return.
+           # Assuming they return integers.
+           self.fade_time = int(response.value.fade_time)
+           self.fade_rate = int(response.value.fade_rate)
+           logger.debug("Lamp %s initialized with Fade Time: %s, Fade Rate: %s", 
+                        self.friendly_name, self.fade_time, self.fade_rate)
+        except Exception as err:
+            logger.warning("Failed to query fade settings for %s: %s", self.friendly_name, err)
+            self.fade_time = 0
+            self.fade_rate = 0
 
     async def _get_actual_level(self):
         """Determine if lamp is ON and query its actual level with retries."""
@@ -226,6 +258,66 @@ class Lamp:
         
         return json.dumps(json_config)
 
+    def gen_ha_config_fade_time(self, mqtt_base_topic):
+        """Generate HA config for Fade Time."""
+        if hasattr(self.short_address, 'address'):
+            unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}_fadetime"
+        elif hasattr(self.short_address, 'group'):
+            unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}_fadetime"
+        elif str(type(self.short_address).__name__) == 'Broadcast':
+            unique_id = f"{type(self.driver).__name__}_broadcast_fadetime"
+        else:
+            unique_id = f"{type(self.driver).__name__}_{self.device_name}_fadetime"
+
+        json_config = {
+            "name": f"{self.friendly_name} Fade Time",
+            "uniq_id": unique_id,
+            "stat_t": MQTT_FADE_TIME_STATE_TOPIC.format(mqtt_base_topic, self.device_name),
+            "cmd_t": MQTT_FADE_TIME_COMMAND_TOPIC.format(mqtt_base_topic, self.device_name),
+            "min": 0,
+            "max": 15,
+            "entity_category": "config",
+            "icon": "mdi:timer-sand",
+             "device": {
+                "ids": "dali2mqtt",
+                "name": "DALI Lights",
+                "sw": f"dali2mqtt {__version__}",
+                "mdl": f"{type(self.driver).__name__}",
+                "mf": "dali2mqtt",
+            },
+        }
+        return json.dumps(json_config)
+
+    def gen_ha_config_fade_rate(self, mqtt_base_topic):
+        """Generate HA config for Fade Rate."""
+        if hasattr(self.short_address, 'address'):
+            unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}_faderate"
+        elif hasattr(self.short_address, 'group'):
+            unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}_faderate"
+        elif str(type(self.short_address).__name__) == 'Broadcast':
+            unique_id = f"{type(self.driver).__name__}_broadcast_faderate"
+        else:
+            unique_id = f"{type(self.driver).__name__}_{self.device_name}_faderate"
+
+        json_config = {
+            "name": f"{self.friendly_name} Fade Rate",
+            "uniq_id": unique_id,
+            "stat_t": MQTT_FADE_RATE_STATE_TOPIC.format(mqtt_base_topic, self.device_name),
+            "cmd_t": MQTT_FADE_RATE_COMMAND_TOPIC.format(mqtt_base_topic, self.device_name),
+            "min": 1,
+            "max": 15,
+            "entity_category": "config",
+            "icon": "mdi:speedometer",
+             "device": {
+                "ids": "dali2mqtt",
+                "name": "DALI Lights",
+                "sw": f"dali2mqtt {__version__}",
+                "mdl": f"{type(self.driver).__name__}",
+                "mf": "dali2mqtt",
+            },
+        }
+        return json.dumps(json_config)
+
     async def get_level(self):
         """Retrieve actual level from ballast."""
         import asyncio
@@ -281,13 +373,48 @@ class Lamp:
         self.__tc  = await self.driver.run_sequence(QueryDT8ColourValue(address=self.short_address, query=QueryColourValueDTR.ColourTemperatureTC))
         return self.__tc
         
+    async def set_fade_time(self, value):
+        """Set fade time configuration."""
+        if not 0 <= value <= 15:
+             raise ValueError("Fade time must be between 0 and 15")
+        
+        # Prepare DTR0 with the value
+        await self.driver.send(gear.DTR0(value))
+        # Send Store DTR as Fade Time command
+        # Must be sent twice
+        await self.driver.send(gear.SetFadeTime(self.short_address))
+        await self.driver.send(gear.SetFadeTime(self.short_address))
+        
+        self.fade_time = value
+        logger.debug("Set lamp <%s> fade time to %s", self.friendly_name, self.fade_time)
+
+    async def set_fade_rate(self, value):
+        """Set fade rate configuration."""
+        if not 1 <= value <= 15:
+             raise ValueError("Fade rate must be between 1 and 15")
+             
+        # Prepare DTR0 with the value
+        await self.driver.send(gear.DTR0(value))
+        # Send Store DTR as Fade Rate command
+        # Must be sent twice
+        await self.driver.send(gear.SetFadeRate(self.short_address))
+        await self.driver.send(gear.SetFadeRate(self.short_address))
+        
+        self.fade_rate = value
+        logger.debug("Set lamp <%s> fade rate to %s", self.friendly_name, self.fade_rate)
+
     async def set_tc(self, value):
         """Commit level to ballast."""
-        # value_scaled  = int(self.min_level + (value) * ((self.max_level - self.min_level) / (254)))
-        if not self.tc_coolest <= value <= self.tc_warmest and value != 0:
-            raise ValueError
+        if self.tc_coolest is None or self.tc_warmest is None:
+             raise ValueError("Color temperature not supported")
+
+        if not self.tc_coolest <= value <= self.tc_warmest:
+            raise ValueError(f"Value {value} out of range ({self.tc_coolest}-{self.tc_warmest})")
+            
         self.__tc = value
+        
         await self.driver.run_sequence(SetDT8ColourValueTc(address=self.short_address, tc_mired=value))
+        
         logger.debug(
             "Set lamp <%s> color temp to %s", self.friendly_name, self.__tc
         )
