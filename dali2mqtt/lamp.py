@@ -84,46 +84,50 @@ class Lamp:
             self.max_level = 254
             logger.warning("Set max_level to 254 due to non-numeric response")
         
-        # Query actual level and handle special DALI responses like 'MASK'
-        # MASK means lamp is in transition - retry with increasing delays
-        # For DT8 devices, may need to query target level instead
-        import asyncio
-        max_retries = 3
-        retry_delays = [0.2, 0.3, 0.5]  # Increasing delays in seconds
-        
-        for attempt in range(max_retries):
-            level_response = (await self.driver.send(gear.QueryActualLevel(self.short_address))).value
-            try:
-                self.__level = int(level_response)
-                break  # Success, exit retry loop
-            except (ValueError, TypeError):
-                address_str = getattr(self.short_address, 'address', getattr(self.short_address, 'group', self.short_address))
-                if str(level_response) == 'MASK':
-                    if attempt < max_retries - 1:
-                        logger.debug("Lamp %s returned MASK (attempt %d/%d), retrying...", address_str, attempt + 1, max_retries)
-                        await asyncio.sleep(retry_delays[attempt])
-                    else:
-                        # Last attempt: try querying target level instead (works better for DT8)
-                        logger.debug("Lamp %s still MASK, trying target level query...", address_str)
-                        target_response = (await self.driver.send(gear.QueryContentDTR0(self.short_address))).value
-                        try:
-                            self.__level = int(target_response)
-                            logger.debug("Lamp %s target level query succeeded: %s", address_str, self.__level)
+        # 1. Check Status to see if lamp is actually ON
+        # Bit 2 of status byte indicates 'Lamp On'
+        try:
+            status_resp = await self.driver.send(gear.QueryStatus(self.short_address))
+            status_byte = status_resp.value.as_integer
+            lamp_on = (status_byte & 0x04) != 0
+            fade_running = (status_byte & 0x10) != 0
+            address_str = getattr(self.short_address, 'address', getattr(self.short_address, 'group', self.short_address))
+            
+            if not lamp_on:
+                logger.debug("Lamp %s is OFF (Status Bit 2 is 0)", address_str)
+                self.__level = 0
+            else:
+                # Lamp is ON, query actual level
+                import asyncio
+                max_retries = 3
+                retry_delays = [0.2, 0.4, 0.8]
+                
+                # If fade is running, might get MASK, so wait a bit first
+                if fade_running:
+                     logger.debug("Lamp %s Fade Running (Status Bit 4), waiting...", address_str)
+                     await asyncio.sleep(0.5)
+
+                for attempt in range(max_retries):
+                    level_response = (await self.driver.send(gear.QueryActualLevel(self.short_address))).value
+                    try:
+                        self.__level = int(level_response)
+                        break
+                    except (ValueError, TypeError):
+                        if str(level_response) == 'MASK':
+                            if attempt < max_retries - 1:
+                                logger.debug("Lamp %s returned MASK (attempt %d), retrying...", address_str, attempt+1)
+                                await asyncio.sleep(retry_delays[attempt])
+                            else:
+                                logger.warning("Lamp %s MASK persists. Status says ON, defaulting to 254", address_str)
+                                self.__level = 254 # Assume full brightness if we know it's ON but can't read level
+                        else:
+                            self.__level = 254 # Fallback for non-numeric if ON
+                            logger.warning("Lamp %s invalid level '%s' but Lamp is ON, defaulting to 254", address_str, level_response)
                             break
-                        except (ValueError, TypeError):
-                            # If target level also fails, query last active level
-                            logger.debug("Lamp %s trying last active level...", address_str)
-                            last_level_response = (await self.driver.send(gear.QueryLastActiveLevel(self.short_address))).value
-                            try:
-                                self.__level = int(last_level_response)
-                                logger.debug("Lamp %s last active level: %s", address_str, self.__level)
-                            except (ValueError, TypeError):
-                                logger.warning("Lamp %s: all query methods failed, defaulting to 254", address_str)
-                                self.__level = 254  # Assume on if we can't read it
-                else:
-                    logger.warning("Lamp %s returned non-numeric level: %s, defaulting to 0", address_str, level_response)
-                    self.__level = 0
-                    break
+                            
+        except Exception as err:
+            logger.warning("Failed to query status/level for %s: %s", getattr(self.short_address, 'address', self.short_address), err)
+            self.__level = 0
         
         # Query color temperature support (DT8 devices)
         # Add small delay after level query for device stability
