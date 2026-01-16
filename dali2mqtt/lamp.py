@@ -13,6 +13,8 @@ from dali.gear.colour import (
     StoreColourTemperatureTcLimitDTR2,
 )
 
+from dali.memory import info as mem_info, oem as mem_oem
+
 from dali2mqtt.consts import (
     ALL_SUPPORTED_LOG_LEVELS,
     LOG_FORMAT,
@@ -62,6 +64,10 @@ class Lamp:
         else:
             self.device_name = slugify(friendly_name)
 
+        self.device_type = "Generic DALI Ballast"
+        self.gtin = "N/A"
+        self.firmware_version = "N/A"
+        self.luminaire_id = "N/A"
         logger.setLevel(ALL_SUPPORTED_LOG_LEVELS[log_level])
 
     async def init(self):
@@ -76,6 +82,8 @@ class Lamp:
         await self._initialize_fade_settings()
         await self._get_actual_level()
         await self._initialize_color_temperature()
+        await self._initialize_device_type()
+        await self._initialize_memory_bank_info()
 
     def _initialize_default_values(self):
         """Set default values when queries are not possible."""
@@ -215,6 +223,74 @@ class Lamp:
             self.tc_warmest = None
             self.__tc = None
 
+    async def _initialize_device_type(self):
+        """Query device type."""
+        # Skip for groups/broadcast
+        if hasattr(self.short_address, 'group') or isinstance(self.short_address, address.Broadcast):
+            return
+
+        try:
+             response = await self.driver.send(gear.QueryDeviceType(self.short_address))
+             if response and hasattr(response, 'value'):
+                 self.device_type = str(response)
+        except Exception as err:
+             logger.debug("Failed to query device type for %s: %s", self.friendly_name, err)
+
+    async def _initialize_memory_bank_info(self):
+        """Query memory bank info (GTIN, FW, Model)."""
+        if hasattr(self.short_address, 'group') or isinstance(self.short_address, address.Broadcast):
+            return
+
+        try:
+             # Try to read Luminaire ID from Bank 1 (OEM)
+             self.luminaire_id = await self.driver.run_sequence(mem_oem.LuminaireIdentification.read(self.short_address))
+             if not isinstance(self.luminaire_id, str) or not self.luminaire_id.strip():
+                 self.luminaire_id = None
+             else:
+                 self.luminaire_id = self.luminaire_id.strip()
+        except Exception as err:
+             logger.debug("Failed to read Luminaire ID for %s: %s", self.friendly_name, err)
+             self.luminaire_id = None
+        
+        try:
+            # Try to read GTIN from Bank 0
+            gtin_val = await self.driver.run_sequence(mem_info.GTIN.read(self.short_address))
+            if isinstance(gtin_val, int):
+                self.gtin = str(gtin_val)
+            else:
+                self.gtin = None
+        except Exception as err:
+             logger.debug("Failed to read GTIN for %s: %s", self.friendly_name, err)
+             self.gtin = None
+
+        try:
+            # Try to read FW Version from Bank 0
+            self.firmware_version = await self.driver.run_sequence(mem_info.FirmwareVersion.read(self.short_address))
+        except Exception as err:
+            logger.debug("Failed to read Lamp FW for %s: %s", self.friendly_name, err)
+            self.firmware_version = None
+
+    def _get_sw_version(self):
+        """Generate software version string including driver info."""
+        driver_name = type(self.driver).__name__
+        driver_fw = getattr(self.driver, "firmware_version", None)
+        
+        sw_version = f"dali2mqtt {__version__}"
+        if driver_name:
+             # Clean up common driver names for display
+             if "Hasseb" in driver_name: driver_name = "Hasseb"
+             elif "Tridonic" in driver_name: driver_name = "Tridonic"
+             
+             sw_version += f" / {driver_name}"
+             if driver_fw:
+                 sw_version += f" {driver_fw}"
+        
+        # Lamp FW Info
+        if self.firmware_version and self.firmware_version != "not implemented":
+            sw_version += f" / Lamp FW {self.firmware_version}"
+
+        return sw_version
+
     def gen_ha_config(self, mqtt_base_topic):
         """Generate a automatic configuration for Home Assistant."""
         # Generate proper unique ID for lamps, groups, and broadcast
@@ -249,8 +325,9 @@ class Lamp:
             "device": {
                 "ids": unique_id,
                 "name": self.friendly_name,
-                "sw": f"dali2mqtt {__version__}",
-                "mdl": f"{type(self.driver).__name__}",
+                "sw": self._get_sw_version(),
+                "mdl": self.luminaire_id if self.luminaire_id else self.device_type,
+                "hw": self.gtin if self.gtin else "rev 1.0",
                 "mf": "dali2mqtt",
             },
         }
@@ -294,8 +371,9 @@ class Lamp:
              "device": {
                 "ids": base_unique_id,
                 "name": self.friendly_name,
-                "sw": f"dali2mqtt {__version__}",
-                "mdl": f"{type(self.driver).__name__}",
+                "sw": self._get_sw_version(),
+                "mdl": self.luminaire_id if self.luminaire_id else self.device_type,
+                "hw": self.gtin if self.gtin else "rev 1.0",
                 "mf": "dali2mqtt",
             },
         }
@@ -330,8 +408,9 @@ class Lamp:
              "device": {
                 "ids": base_unique_id,
                 "name": self.friendly_name,
-                "sw": f"dali2mqtt {__version__}",
-                "mdl": f"{type(self.driver).__name__}",
+                "sw": self._get_sw_version(),
+                "mdl": self.luminaire_id if self.luminaire_id else self.device_type,
+                "hw": self.gtin if self.gtin else "rev 1.0",
                 "mf": "dali2mqtt",
             },
         }
