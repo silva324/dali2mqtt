@@ -119,8 +119,8 @@ class Lamp:
            # Checking library Source: QueryFadeTimeAndRateResponse has props that return value slices.
            # Let's check what they return.
            # Assuming they return integers.
-           self.fade_time = int(response.value.fade_time)
-           self.fade_rate = int(response.value.fade_rate)
+           self.fade_time = int(response.fade_time)
+           self.fade_rate = int(response.fade_rate)
            logger.debug("Lamp %s initialized with Fade Time: %s, Fade Rate: %s", 
                         self.friendly_name, self.fade_time, self.fade_rate)
         except Exception as err:
