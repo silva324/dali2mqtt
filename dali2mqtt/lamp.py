@@ -13,6 +13,7 @@ from dali.gear.colour import (
     StoreColourTemperatureTcLimitDTR2,
 )
 
+from dali.sequences import QueryDeviceTypes
 from dali.memory import info as mem_info, oem as mem_oem
 
 from dali2mqtt.consts import (
@@ -230,9 +231,18 @@ class Lamp:
             return
 
         try:
-             response = await self.driver.send(gear.QueryDeviceType(self.short_address))
-             if response and hasattr(response, 'value'):
-                 self.device_type = str(response)
+             # Use sequence to get list of types (handles 'multiple' response)
+             type_ids = await self.driver.run_sequence(QueryDeviceTypes(self.short_address))
+             
+             if type_ids:
+                 types_str = []
+                 for tid in type_ids:
+                     if tid in gear.QueryDeviceTypeResponse._types:
+                         types_str.append(gear.QueryDeviceTypeResponse._types[tid])
+                     else:
+                         types_str.append(str(tid))
+                 self.device_type = ", ".join(types_str)
+
         except Exception as err:
              logger.debug("Failed to query device type for %s: %s", self.friendly_name, err)
 
