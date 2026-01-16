@@ -247,8 +247,8 @@ class Lamp:
             "pl_not_avail": MQTT_NOT_AVAILABLE,
             "brightness": "true",
             "device": {
-                "ids": "dali2mqtt",
-                "name": "DALI Lights",
+                "ids": unique_id,
+                "name": self.friendly_name,
                 "sw": f"dali2mqtt {__version__}",
                 "mdl": f"{type(self.driver).__name__}",
                 "mf": "dali2mqtt",
@@ -268,26 +268,29 @@ class Lamp:
     def gen_ha_config_fade_time(self, mqtt_base_topic):
         """Generate HA config for Fade Time."""
         if hasattr(self.short_address, 'address'):
-            unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}_fadetime"
+            base_unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}"
         elif hasattr(self.short_address, 'group'):
-            unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}_fadetime"
+            base_unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}"
         elif str(type(self.short_address).__name__) == 'Broadcast':
-            unique_id = f"{type(self.driver).__name__}_broadcast_fadetime"
+            base_unique_id = f"{type(self.driver).__name__}_broadcast"
         else:
-            unique_id = f"{type(self.driver).__name__}_{self.device_name}_fadetime"
+            base_unique_id = f"{type(self.driver).__name__}_{self.device_name}"
+            
+        unique_id = f"{base_unique_id}_fadetime"
 
         json_config = {
-            "name": f"{self.friendly_name} Fade Time",
+            "name": "Fade Time",
             "uniq_id": unique_id,
             "stat_t": MQTT_FADE_TIME_STATE_TOPIC.format(mqtt_base_topic, self.device_name),
             "cmd_t": MQTT_FADE_TIME_COMMAND_TOPIC.format(mqtt_base_topic, self.device_name),
             "min": 0,
             "max": 15,
+            "mode": "box",
             "entity_category": "config",
             "icon": "mdi:timer-sand",
              "device": {
-                "ids": "dali2mqtt",
-                "name": "DALI Lights",
+                "ids": base_unique_id,
+                "name": self.friendly_name,
                 "sw": f"dali2mqtt {__version__}",
                 "mdl": f"{type(self.driver).__name__}",
                 "mf": "dali2mqtt",
@@ -298,26 +301,29 @@ class Lamp:
     def gen_ha_config_fade_rate(self, mqtt_base_topic):
         """Generate HA config for Fade Rate."""
         if hasattr(self.short_address, 'address'):
-            unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}_faderate"
+            base_unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}"
         elif hasattr(self.short_address, 'group'):
-            unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}_faderate"
+            base_unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}"
         elif str(type(self.short_address).__name__) == 'Broadcast':
-            unique_id = f"{type(self.driver).__name__}_broadcast_faderate"
+            base_unique_id = f"{type(self.driver).__name__}_broadcast"
         else:
-            unique_id = f"{type(self.driver).__name__}_{self.device_name}_faderate"
+            base_unique_id = f"{type(self.driver).__name__}_{self.device_name}"
+        
+        unique_id = f"{base_unique_id}_faderate"
 
         json_config = {
-            "name": f"{self.friendly_name} Fade Rate",
+            "name": "Fade Rate",
             "uniq_id": unique_id,
             "stat_t": MQTT_FADE_RATE_STATE_TOPIC.format(mqtt_base_topic, self.device_name),
             "cmd_t": MQTT_FADE_RATE_COMMAND_TOPIC.format(mqtt_base_topic, self.device_name),
             "min": 1,
             "max": 15,
+            "mode": "box",
             "entity_category": "config",
             "icon": "mdi:speedometer",
              "device": {
-                "ids": "dali2mqtt",
-                "name": "DALI Lights",
+                "ids": base_unique_id,
+                "name": self.friendly_name,
                 "sw": f"dali2mqtt {__version__}",
                 "mdl": f"{type(self.driver).__name__}",
                 "mf": "dali2mqtt",

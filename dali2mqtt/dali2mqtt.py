@@ -37,6 +37,7 @@ from dali2mqtt.consts import (
     DEFAULT_CONFIG_FILE,
     DEFAULT_HA_DISCOVERY_PREFIX,
     HA_DISCOVERY_PREFIX,
+    HA_DISCOVERY_PREFIX_NUMBER,
     HID_HASSEB,
     HID_TRIDONIC,
     LOG_FORMAT,
@@ -184,7 +185,7 @@ async def initialize_lamps(data_object, client):
             # Publish Fade Time and Rate
             mqtt_data.extend([
                 (
-                    HA_DISCOVERY_PREFIX.format(ha_prefix, f"{lamp_object.device_name}_fadetime"),
+                    HA_DISCOVERY_PREFIX_NUMBER.format(ha_prefix, f"{lamp_object.device_name}_fadetime"),
                     lamp_object.gen_ha_config_fade_time(mqtt_base_topic),
                     True,
                 ),
@@ -194,7 +195,7 @@ async def initialize_lamps(data_object, client):
                     False,
                 ),
                 (
-                    HA_DISCOVERY_PREFIX.format(ha_prefix, f"{lamp_object.device_name}_faderate"),
+                    HA_DISCOVERY_PREFIX_NUMBER.format(ha_prefix, f"{lamp_object.device_name}_faderate"),
                     lamp_object.gen_ha_config_fade_rate(mqtt_base_topic),
                     True,
                 ),
