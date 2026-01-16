@@ -219,13 +219,13 @@ class Lamp:
         """Generate a automatic configuration for Home Assistant."""
         # Generate proper unique ID for lamps, groups, and broadcast
         if hasattr(self.short_address, 'address'):
-            unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}"
+            unique_id = f"dali2mqtt_lamp_{self.short_address.address}"
         elif hasattr(self.short_address, 'group'):
-            unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}"
+            unique_id = f"dali2mqtt_group_{self.short_address.group}"
         elif str(type(self.short_address).__name__) == 'Broadcast':
-            unique_id = f"{type(self.driver).__name__}_broadcast"
+            unique_id = f"dali2mqtt_broadcast"
         else:
-            unique_id = f"{type(self.driver).__name__}_{self.device_name}"
+            unique_id = f"dali2mqtt_{self.device_name}"
         
         json_config = {
             "name": self.friendly_name,
@@ -268,13 +268,13 @@ class Lamp:
     def gen_ha_config_fade_time(self, mqtt_base_topic):
         """Generate HA config for Fade Time."""
         if hasattr(self.short_address, 'address'):
-            base_unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}"
+            base_unique_id = f"dali2mqtt_lamp_{self.short_address.address}"
         elif hasattr(self.short_address, 'group'):
-            base_unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}"
+            base_unique_id = f"dali2mqtt_group_{self.short_address.group}"
         elif str(type(self.short_address).__name__) == 'Broadcast':
-            base_unique_id = f"{type(self.driver).__name__}_broadcast"
+            base_unique_id = f"dali2mqtt_broadcast"
         else:
-            base_unique_id = f"{type(self.driver).__name__}_{self.device_name}"
+            base_unique_id = f"dali2mqtt_{self.device_name}"
             
         unique_id = f"{base_unique_id}_fadetime"
 
@@ -304,13 +304,13 @@ class Lamp:
     def gen_ha_config_fade_rate(self, mqtt_base_topic):
         """Generate HA config for Fade Rate."""
         if hasattr(self.short_address, 'address'):
-            base_unique_id = f"{type(self.driver).__name__}_lamp_{self.short_address.address}"
+            base_unique_id = f"dali2mqtt_lamp_{self.short_address.address}"
         elif hasattr(self.short_address, 'group'):
-            base_unique_id = f"{type(self.driver).__name__}_group_{self.short_address.group}"
+            base_unique_id = f"dali2mqtt_group_{self.short_address.group}"
         elif str(type(self.short_address).__name__) == 'Broadcast':
-            base_unique_id = f"{type(self.driver).__name__}_broadcast"
+            base_unique_id = f"dali2mqtt_broadcast"
         else:
-            base_unique_id = f"{type(self.driver).__name__}_{self.device_name}"
+            base_unique_id = f"dali2mqtt_{self.device_name}"
         
         unique_id = f"{base_unique_id}_faderate"
 
