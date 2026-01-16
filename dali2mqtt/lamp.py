@@ -53,7 +53,14 @@ class Lamp:
         self.short_address = short_address
         self.friendly_name = friendly_name
 
-        self.device_name = slugify(friendly_name)
+        if hasattr(self.short_address, 'address'):
+            self.device_name = str(self.short_address.address)
+        elif hasattr(self.short_address, 'group'):
+            self.device_name = f"group_{self.short_address.group}"
+        elif str(type(self.short_address).__name__) == 'Broadcast':
+            self.device_name = "broadcast"
+        else:
+            self.device_name = slugify(friendly_name)
 
         logger.setLevel(ALL_SUPPORTED_LOG_LEVELS[log_level])
 
