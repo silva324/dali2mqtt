@@ -66,6 +66,8 @@ from dali2mqtt.consts import (
 )
 
 
+from slugify import slugify
+
 logging.basicConfig(format=LOG_FORMAT, level=os.environ.get("LOGLEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
@@ -155,6 +157,16 @@ async def initialize_lamps(data_object, client):
 
             # Store lamp using device_name (slugified) to match MQTT topic lookups
             data_object["all_lamps"][lamp_object.device_name] = lamp_object
+
+            # Cleanup old discovery topic if necessary
+            # Old version used slugify(friendly_name) as the ID in the topic.
+            # New version uses device_name (address).
+            old_name_slug = slugify(name)
+            if old_name_slug != lamp_object.device_name:
+                 old_topic = HA_DISCOVERY_PREFIX.format(ha_prefix, old_name_slug)
+                 logger.debug("Cleaning up old discovery topic: %s", old_topic)
+                 # Publish empty payload to remove retained message
+                 client.publish(old_topic, "", qos=1, retain=True)
 
             mqtt_data = [
                 (

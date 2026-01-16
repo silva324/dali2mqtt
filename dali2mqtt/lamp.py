@@ -287,6 +287,9 @@ class Lamp:
             "max": 15,
             "mode": "box",
             "entity_category": "config",
+            "avty_t": MQTT_DALI2MQTT_STATUS.format(mqtt_base_topic),
+            "pl_avail": MQTT_AVAILABLE,
+            "pl_not_avail": MQTT_NOT_AVAILABLE,
             "icon": "mdi:timer-sand",
              "device": {
                 "ids": base_unique_id,
@@ -320,6 +323,9 @@ class Lamp:
             "max": 15,
             "mode": "box",
             "entity_category": "config",
+            "avty_t": MQTT_DALI2MQTT_STATUS.format(mqtt_base_topic),
+            "pl_avail": MQTT_AVAILABLE,
+            "pl_not_avail": MQTT_NOT_AVAILABLE,
             "icon": "mdi:speedometer",
              "device": {
                 "ids": base_unique_id,
