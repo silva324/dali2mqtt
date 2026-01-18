@@ -726,6 +726,11 @@ async def main(args):
         )
 
     logger.setLevel(ALL_SUPPORTED_LOG_LEVELS[config.log_level])
+    
+    # Suppress verbose timeout errors from python-dali driver when bus is down
+    # These logs ("faking an error response") are expected when DALI power is off
+    logging.getLogger("dali.driver.hid").setLevel(logging.CRITICAL)
+
     devices_names_config = DevicesNamesConfig(
         config.log_level, config.devices_names_file
     )
@@ -812,15 +817,25 @@ async def main(args):
                         unhealthy_since = time.time()
                         logger.warning("Bridge status is %s. Monitoring for recovery...", health_monitor.status.value)
                     
-                    # If unhealthy for > 2 minutes, force exit to restart container
-                    if time.time() - unhealthy_since > 120:
-                        logger.error("Bridge unhealthy for over 2 minutes. Exiting to trigger container restart.")
-                        try:
-                            mqttc.disconnect()
-                            mqttc.loop_stop()
-                        except:
-                            pass
-                        return # Exit main() to trigger restart
+                    # Check if connection to driver is actually lost
+                    # If driver is connected but DALI is down, we don't want to restart loop
+                    driver_dead = not driver_manager.get_connection_status()["connected"]
+                    
+                    if driver_dead:
+                        # USB/Driver failure - Restarting service is the best fix
+                        if time.time() - unhealthy_since > 120:
+                            logger.error("Driver disconnected/dead for over 2 minutes. Exiting to trigger restart.")
+                            try:
+                                mqttc.disconnect()
+                                mqttc.loop_stop()
+                            except:
+                                pass
+                            return # Exit main() to trigger restart
+                    else:
+                        # USB is connected, but DALI commands failing (Bus power off?)
+                        # Log periodically but stay online to avoid boot loops/log spam
+                        if (time.time() - unhealthy_since) > 120 and (time.time() - unhealthy_since) % 300 < 30:
+                             logger.warning("DALI Bus communication failing (Power off?), but Driver is connected. Staying online.")
                 else:
                     unhealthy_since = None
                 
