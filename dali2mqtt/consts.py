@@ -58,6 +58,10 @@ MQTT_NOT_AVAILABLE = "offline"
 
 HA_DISCOVERY_PREFIX = "{}/light/{}/config"
 HA_DISCOVERY_PREFIX_NUMBER = "{}/number/{}/config"
+HA_DISCOVERY_PREFIX_SENSOR = "{}/sensor/{}/config"
+HA_DISCOVERY_PREFIX_BINARY_SENSOR = "{}/binary_sensor/{}/config"
+HA_DISCOVERY_PREFIX_BUTTON = "{}/button/{}/config"
+HA_DISCOVERY_PREFIX_SELECT = "{}/select/{}/config"
 
 MIN_HASSEB_FIRMWARE_VERSION = 2.3
 MIN_BACKOFF_TIME = 2

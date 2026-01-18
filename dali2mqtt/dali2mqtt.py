@@ -8,6 +8,7 @@ import re
 import time
 import os
 import asyncio
+import json
 
 import paho.mqtt.client as mqtt
 
@@ -41,6 +42,10 @@ from dali2mqtt.consts import (
     DEFAULT_HA_DISCOVERY_PREFIX,
     HA_DISCOVERY_PREFIX,
     HA_DISCOVERY_PREFIX_NUMBER,
+    HA_DISCOVERY_PREFIX_SENSOR,
+    HA_DISCOVERY_PREFIX_BINARY_SENSOR,
+    HA_DISCOVERY_PREFIX_BUTTON,
+    HA_DISCOVERY_PREFIX_SELECT,
     HID_HASSEB,
     HID_TRIDONIC,
     LOG_FORMAT,
@@ -66,6 +71,7 @@ from dali2mqtt.consts import (
     MQTT_STATE_TOPIC,
     RED_COLOR,
     YELLOW_COLOR,
+    __version__,
 )
 
 
@@ -133,8 +139,79 @@ async def scan_groups(dali_driver, lamps):
     return groups
 
 
+async def initialize_bridge_device(mqtt_client, data_object):
+    """Initialize the Bridge device in Home Assistant."""
+    mqtt_base_topic = data_object["base_topic"]
+    ha_prefix = data_object["ha_prefix"]
+    # Get driver type safely
+    driver = data_object.get("driver")
+    driver_type = "unknown"
+    if driver and hasattr(driver, "driver_type"):
+        driver_type = driver.driver_type
+
+    device_info = {
+        "identifiers": ["dali2mqtt_bridge"],
+        "name": "DALI2MQTT Bridge",
+        "model": f"DALI Bridge ({driver_type})",
+        "manufacturer": "dali2mqtt",
+        "sw_version": __version__,
+    }
+
+    # 1. Bridge Status Sensor (Enum)
+    status_config = {
+        "name": "Bridge Status",
+        "unique_id": f"dali2mqtt_bridge_status",
+        "state_topic": f"{mqtt_base_topic}/bridge/status",
+        "value_template": "{{ value_json.status }}",
+        "icon": "mdi:bridge",
+        "device": device_info,
+        "entity_category": "diagnostic",
+    }
+    mqtt_client.publish(
+        HA_DISCOVERY_PREFIX_SENSOR.format(ha_prefix, "dali2mqtt_bridge_status"),
+        json.dumps(status_config),
+        qos=1, retain=True
+    )
+
+    # 2. Bus Error Binary Sensor
+    bus_error_config = {
+        "name": "DALI Bus Error",
+        "unique_id": f"dali2mqtt_bridge_bus_error",
+        "state_topic": f"{mqtt_base_topic}/bridge/status",
+        "value_template": "{{ 'ON' if value_json.bus_error else 'OFF' }}",
+        "device_class": "problem",
+        "device": device_info,
+        "entity_category": "diagnostic",
+    }
+    mqtt_client.publish(
+        HA_DISCOVERY_PREFIX_BINARY_SENSOR.format(ha_prefix, "dali2mqtt_bridge_bus_error"),
+        json.dumps(bus_error_config),
+        qos=1, retain=True
+    )
+
+    # 3. Restart Button
+    restart_config = {
+        "name": "Restart Bridge",
+        "unique_id": f"dali2mqtt_bridge_restart",
+        "command_topic": f"{mqtt_base_topic}/bridge/request/restart",
+        "payload_press": "restart",
+        "icon": "mdi:restart",
+        "device": device_info,
+        "entity_category": "config",
+    }
+    mqtt_client.publish(
+        HA_DISCOVERY_PREFIX_BUTTON.format(ha_prefix, "dali2mqtt_bridge_restart"),
+        json.dumps(restart_config),
+        qos=1, retain=True
+    )
+    logger.info("Bridge device initialized")
+
+
 async def initialize_lamps(data_object, client):
     """Initialize all lamps and groups."""
+    
+    # Initialize bridge device
+    await initialize_bridge_device(client, data_object)
 
     driver = data_object["driver"]
     mqtt_base_topic = data_object["base_topic"]
@@ -316,7 +393,7 @@ async def on_bridge_status_change(mqtt_client, data_object, new_status):
         status_payload["health"] = data_object["health_monitor"].get_status_summary()
     
     # Create MQTT topic for bridge health status
-    health_topic = f"{mqtt_base_topic}/bridge/health"
+    health_topic = f"{mqtt_base_topic}/bridge/status"
     
     logger.info("Publishing bridge status: %s", status_payload)
     try:
@@ -393,6 +470,25 @@ async def on_message_reinitialize_lamps_cmd(mqtt_client, data_object, msg):
     """Callback on MQTT scan lamps command message."""
     logger.debug("Reinitialize Command on %s", msg.topic)
     await initialize_lamps(data_object, mqtt_client)
+
+
+async def on_message_restart_bridge_cmd(mqtt_client, data_object, msg):
+    """Callback on MQTT restart bridge command message."""
+    logger.info("Restart Bridge Command on %s", msg.topic)
+    import sys
+    logger.warning("Restarting dali2mqtt service by request...")
+    # Clean disconnect
+    try:
+        mqtt_client.publish(
+            f"{data_object['base_topic']}/bridge/status",
+            '{"status": "offline"}',
+            qos=1,
+            retain=True
+        )
+        mqtt_client.disconnect()
+    except:
+        pass
+    sys.exit(1)
 
 
 def get_lamp_object(data_object, light):
@@ -602,6 +698,7 @@ async def on_connect(
             (MQTT_FADE_TIME_COMMAND_TOPIC.format(mqtt_base_topic, "+"), 0),
             (MQTT_FADE_RATE_COMMAND_TOPIC.format(mqtt_base_topic, "+"), 0),
             (MQTT_SCAN_LAMPS_COMMAND_TOPIC.format(mqtt_base_topic), 0),
+            (f"{mqtt_base_topic}/bridge/request/restart", 0),
         ]
     )
     client.publish(
@@ -609,7 +706,7 @@ async def on_connect(
     )
     
     # Publish initial bridge health status
-    health_topic = f"{mqtt_base_topic}/bridge/health"
+    health_topic = f"{mqtt_base_topic}/bridge/status"
     client.publish(
         health_topic,
         '{"status": "online", "timestamp": ' + str(int(time.time())) + '}',
@@ -698,7 +795,12 @@ async def create_mqtt_client(
     
     mqttc.message_callback_add(
         MQTT_SCAN_LAMPS_COMMAND_TOPIC.format(mqtt_base_topic),
-        on_message_reinitialize_lamps_cmd,
+        lambda a,b,c : loop.create_task(on_message_reinitialize_lamps_cmd(a,b,c)),
+    )
+    
+    mqttc.message_callback_add(
+        f"{mqtt_base_topic}/bridge/request/restart",
+        lambda a,b,c : loop.create_task(on_message_restart_bridge_cmd(a,b,c)),
     )
 
     mqttc.on_message = on_message
@@ -828,7 +930,7 @@ async def main(args):
                               logger.warning("DALI Bus Error detected (Timeout/No Power). DALI Bus might be unpowered.")
                               # Update Status to reflect Bus Error
                               try:
-                                  mqttc.publish(f"{config.mqtt_conf[2]}/bridge/health", '{"status": "online", "bus_error": true}', qos=1, retain=True)
+                                  mqttc.publish(f"{config.mqtt_conf[2]}/bridge/status", '{"status": "online", "bus_error": true}', qos=1, retain=True)
                               except:
                                   pass
                          elif time.time() - bus_error_since > 300: # Remind every 5 mins
@@ -838,7 +940,7 @@ async def main(args):
                          if bus_error_since is not None:
                               logger.info("DALI Bus recovered.")
                               try:
-                                  mqttc.publish(f"{config.mqtt_conf[2]}/bridge/health", '{"status": "online", "bus_error": false}', qos=1, retain=True)
+                                  mqttc.publish(f"{config.mqtt_conf[2]}/bridge/status", '{"status": "online", "bus_error": false}', qos=1, retain=True)
                               except:
                                   pass
                               bus_error_since = None
@@ -887,7 +989,7 @@ async def main(args):
             if mqttc:
                 try:
                     mqttc.publish(
-                        f"{config.mqtt_conf[2]}/bridge/health",
+                        f"{config.mqtt_conf[2]}/bridge/status",
                         '{"status": "offline"}',
                         qos=1,
                         retain=True
