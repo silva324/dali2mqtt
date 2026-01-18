@@ -13,6 +13,7 @@ import paho.mqtt.client as mqtt
 
 import dali.address as address
 import dali.gear.general as gear
+import dali.frame
 from dali.command import YesNoResponse
 from dali.exceptions import DALIError
 
@@ -730,6 +731,8 @@ async def main(args):
     # Suppress verbose timeout errors from python-dali driver when bus is down
     # These logs ("faking an error response") are expected when DALI power is off
     logging.getLogger("dali.driver.hid").setLevel(logging.CRITICAL)
+    logging.getLogger("tridonic").setLevel(logging.CRITICAL)
+    logging.getLogger("hasseb").setLevel(logging.CRITICAL) 
 
     devices_names_config = DevicesNamesConfig(
         config.log_level, config.devices_names_file
@@ -801,13 +804,45 @@ async def main(args):
             mqttc.loop_start()
             
             unhealthy_since = None
+            bus_error_since = None
             while True:
-                await asyncio.sleep(30)  # Check every 30s
+                await asyncio.sleep(60)  # Check every 60s
                 
                 # Ping DALI to verify connection (and keep health monitor updated)
                 try:
                     # Query valid address 0 (harmless query)
-                    await driver_manager.send(gear.QueryControlGearPresent(address.Short(0)))
+                    response = await driver_manager.send(gear.QueryControlGearPresent(address.Short(0)))
+                    
+                    # Check for DALI Bus Error (Timeout/Fake Error from driver)
+                    # When Tridonic/Hasseb driver times out (DALI power off), it may return BackwardFrameError(255) if configured to fake response
+                    # or the response value itself might indicate error.
+                    is_bus_error = False
+                    if hasattr(response, 'value') and isinstance(response.value, dali.frame.BackwardFrameError):
+                         is_bus_error = True
+                    elif isinstance(response, dali.frame.BackwardFrameError):
+                         is_bus_error = True
+                    
+                    if is_bus_error:
+                         if bus_error_since is None:
+                              bus_error_since = time.time()
+                              logger.warning("DALI Bus Error detected (Timeout/No Power). DALI Bus might be unpowered.")
+                              # Update Status to reflect Bus Error
+                              try:
+                                  mqttc.publish(f"{config.mqtt_conf[2]}/bridge/health", '{"status": "online", "bus_error": true}', qos=1, retain=True)
+                              except:
+                                  pass
+                         elif time.time() - bus_error_since > 300: # Remind every 5 mins
+                              logger.warning("DALI Bus Error persisting (Power still off?)")
+                              bus_error_since = time.time()
+                    else:
+                         if bus_error_since is not None:
+                              logger.info("DALI Bus recovered.")
+                              try:
+                                  mqttc.publish(f"{config.mqtt_conf[2]}/bridge/health", '{"status": "online", "bus_error": false}', qos=1, retain=True)
+                              except:
+                                  pass
+                              bus_error_since = None
+
                 except Exception:
                     pass # Health monitor records failure automatically
                 
