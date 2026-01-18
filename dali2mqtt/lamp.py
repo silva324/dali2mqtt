@@ -79,12 +79,18 @@ class Lamp:
             self._initialize_default_values()
             return
         
-        await self._initialize_limits()
-        await self._initialize_fade_settings()
-        await self._get_actual_level()
-        await self._initialize_color_temperature()
-        await self._initialize_device_type()
-        await self._initialize_memory_bank_info()
+        try:
+            await self._initialize_limits()
+            await self._initialize_fade_settings()
+            await self._get_actual_level()
+            await self._initialize_color_temperature()
+            await self._initialize_device_type()
+            await self._initialize_memory_bank_info()
+        except Exception as e:
+            logger.error("Error initializing lamp %s: %s", self.friendly_name, e)
+            # Set safe defaults and continue
+            self._initialize_default_values()
+            raise
 
     def _initialize_default_values(self):
         """Set default values when queries are not possible."""

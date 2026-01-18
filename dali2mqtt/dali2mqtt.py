@@ -19,6 +19,8 @@ from dali.exceptions import DALIError
 from dali2mqtt.devicesnamesconfig import DevicesNamesConfig
 from dali2mqtt.lamp import Lamp
 from dali2mqtt.config import Config
+from dali2mqtt.health_monitor import HealthMonitor, BridgeStatus
+from dali2mqtt.driver_manager import DriverManager
 from dali2mqtt.consts import (
     ALL_SUPPORTED_LOG_LEVELS,
     CONF_CONFIG,
@@ -293,6 +295,41 @@ def on_detect_changes_in_config(mqtt_client):
     """Callback when changes are detected in the configuration file."""
     logger.info("Reconnecting to server")
     mqtt_client.disconnect()
+
+
+async def on_bridge_status_change(mqtt_client, data_object, new_status):
+    """Callback when bridge health status changes.
+    
+    Notifies Home Assistant of bridge status changes.
+    """
+    mqtt_base_topic = data_object["base_topic"]
+    
+    # Create a status message
+    status_payload = {
+        "status": new_status.value,
+        "timestamp": int(time.time()),
+    }
+    
+    # Add health details if available
+    if "health_monitor" in data_object:
+        status_payload["health"] = data_object["health_monitor"].get_status_summary()
+    
+    # Create MQTT topic for bridge health status
+    health_topic = f"{mqtt_base_topic}/bridge/health"
+    
+    logger.info("Publishing bridge status: %s", status_payload)
+    try:
+        import json
+        result = mqtt_client.publish(
+            health_topic,
+            json.dumps(status_payload),
+            qos=1,
+            retain=True
+        )
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            logger.error("Failed to publish health status: %s", result.rc)
+    except Exception as e:
+        logger.error("Error publishing bridge status: %s", e)
     
 def on_message_cmd_callback(mqtt_client, data_object, msg, loop):
         logger.debug("on_message_cmd_callback")
@@ -569,6 +606,16 @@ async def on_connect(
     client.publish(
         MQTT_DALI2MQTT_STATUS.format(mqtt_base_topic), MQTT_AVAILABLE, retain=True
     )
+    
+    # Publish initial bridge health status
+    health_topic = f"{mqtt_base_topic}/bridge/health"
+    client.publish(
+        health_topic,
+        '{"status": "online", "timestamp": ' + str(int(time.time())) + '}',
+        qos=1,
+        retain=True
+    )
+    
     await initialize_lamps(data_object, client)
 
 def on_connect_callback(a, b, c, d, ha_prefix, loop):
@@ -580,7 +627,7 @@ def on_connect_callback(a, b, c, d, ha_prefix, loop):
 
 
 async def create_mqtt_client(
-    driver,
+    driver_manager,
     mqtt_server,
     mqtt_port,
     mqtt_username,
@@ -590,12 +637,24 @@ async def create_mqtt_client(
     ha_prefix,
     log_level,
 ):
-    """Create MQTT client object, setup callbacks and connection to server."""
+    """Create MQTT client object, setup callbacks and connection to server.
+    
+    Args:
+        driver_manager: DriverManager instance for DALI operations
+        mqtt_server: MQTT server address
+        mqtt_port: MQTT server port
+        mqtt_username: MQTT username
+        mqtt_password: MQTT password
+        mqtt_base_topic: Base topic for MQTT
+        devices_names_config: Device names configuration
+        ha_prefix: Home Assistant discovery prefix
+        log_level: Logging level
+    """
     logger.info("Connecting to %s:%s", mqtt_server, mqtt_port)
     mqttc = mqtt.Client(
         client_id="dali2mqtt",
         userdata={
-            "driver": driver,
+            "driver": driver_manager,
             "base_topic": mqtt_base_topic,
             "ha_prefix": ha_prefix,
             "devices_names_config": devices_names_config,
@@ -651,6 +710,10 @@ async def create_mqtt_client(
 async def main(args):
     """Main loop."""
     mqttc = None
+    driver_manager = None
+    health_monitor = None
+    monitoring_task = None
+    
     config = Config(args, lambda: on_detect_changes_in_config(mqttc))
 
     if config.log_color:
@@ -694,29 +757,111 @@ async def main(args):
         await dali_driver.connected.wait()
         logger.info("Firmware: %s",dali_driver.firmware_version)
 
+    # Initialize driver manager for automatic reconnection
+    driver_manager = DriverManager(dali_driver, config.dali_driver)
+    
+    # Initialize health monitor
+    health_monitor = HealthMonitor(check_interval=30)
+    
+    # Link health monitor to driver manager
+    driver_manager.health_monitor = health_monitor
 
     retries = 0
     while retries < MAX_RETRIES:
         try:
             mqttc = await create_mqtt_client(
-                dali_driver,
+                driver_manager,
                 *config.mqtt_conf,
                 devices_names_config,
                 config.ha_discovery_prefix,
                 config.log_level,
             )
-            # mqttc.loop_forever()
-            mqttc.loop_start()
-            while True:
-                await asyncio.sleep(1)  # Keep the main loop running
-            retries = (
-                0  # if we reach here, it means we where already connected successfully
+            
+            # Add health monitor and driver manager to data
+            mqttc.user_data_set({
+                **mqttc._userdata,
+                "health_monitor": health_monitor,
+                "driver_manager": driver_manager,
+            })
+            
+            # Start health monitoring
+            status_callback = lambda status: on_bridge_status_change(
+                mqttc, mqttc._userdata, status
             )
+            monitoring_task = asyncio.create_task(
+                health_monitor.start_monitoring(status_callback)
+            )
+            
+            logger.info("dali2mqtt bridge started successfully")
+            mqttc.loop_start()
+            
+            unhealthy_since = None
+            while True:
+                await asyncio.sleep(30)  # Check every 30s
+                
+                # Ping DALI to verify connection (and keep health monitor updated)
+                try:
+                    # Query valid address 0 (harmless query)
+                    await driver_manager.send(gear.QueryControlGearPresent(address.Short(0)))
+                except Exception:
+                    pass # Health monitor records failure automatically
+                
+                # Check for persistent health issues
+                if health_monitor.status != BridgeStatus.ONLINE:
+                    if unhealthy_since is None:
+                        unhealthy_since = time.time()
+                        logger.warning("Bridge status is %s. Monitoring for recovery...", health_monitor.status.value)
+                    
+                    # If unhealthy for > 2 minutes, force exit to restart container
+                    if time.time() - unhealthy_since > 120:
+                        logger.error("Bridge unhealthy for over 2 minutes. Exiting to trigger container restart.")
+                        try:
+                            mqttc.disconnect()
+                            mqttc.loop_stop()
+                        except:
+                            pass
+                        return # Exit main() to trigger restart
+                else:
+                    unhealthy_since = None
+                
+            retries = 0  # if we reach here, it means we where already connected successfully
+        except KeyboardInterrupt:
+            logger.info("Received interrupt signal, shutting down...")
+            break
         except Exception as e:
             logger.debug(e)
             logger.error("%s: %s", type(e).__name__, e)
+            health_monitor.status = BridgeStatus.OFFLINE
+            
+            # Try to publish offline status before disconnecting
+            if mqttc:
+                try:
+                    mqttc.publish(
+                        f"{config.mqtt_conf[2]}/bridge/health",
+                        '{"status": "offline"}',
+                        qos=1,
+                        retain=True
+                    )
+                    mqttc.loop_stop()
+                except Exception as pub_err:
+                    logger.debug("Could not publish offline status: %s", pub_err)
+            
             time.sleep(random.randint(MIN_BACKOFF_TIME, MAX_BACKOFF_TIME))
             retries += 1
+    
+    # Cleanup
+    if monitoring_task:
+        health_monitor.stop_monitoring()
+        try:
+            await asyncio.wait_for(monitoring_task, timeout=2)
+        except asyncio.TimeoutError:
+            monitoring_task.cancel()
+    
+    if mqttc:
+        try:
+            mqttc.loop_stop()
+        except Exception as e:
+            logger.debug("Error stopping MQTT loop: %s", e)
 
     logger.error("Maximum retries of %d reached, exiting...", retries)
 
