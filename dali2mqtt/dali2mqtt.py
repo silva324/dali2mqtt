@@ -84,17 +84,24 @@ logger = logging.getLogger(__name__)
 async def dali_scan(dali_driver):
     """Scan a maximum number of dali devices."""
     lamps = []
-    for lamp in range(0, 63):
+    for lamp in range(0, 64):
         try:
             logging.debug("Search for Lamp %s", lamp)
             present = await dali_driver.send(
                 gear.QueryControlGearPresent(address.Short(lamp))
             )
             if isinstance(present, YesNoResponse) and present.value:
-                lamps.append(lamp)
-                logger.debug("Found lamp at address %d", lamp)
+                # Double check to avoid ghosts (common with old firmware or noise)
+                try:
+                     # Try to read physical minimum level as confirmation
+                     await dali_driver.send(gear.QueryPhysicalMinimumLevel(address.Short(lamp)))
+                     lamps.append(lamp)
+                     logger.debug("Found lamp at address %d", lamp)
+                except DALIError:
+                     logger.warning("Lamp at %d reported present but failed confirmation scan. Ignoring.", lamp)
+
         except DALIError as err:
-            logger.warning("%s not present: %s", lamp, err)
+            logger.debug("%s not present: %s", lamp, err)
     return lamps
 
 
@@ -852,6 +859,7 @@ async def main(args):
         await dali_driver.connected.wait()
         if float(dali_driver.firmware_version) < MIN_HASSEB_FIRMWARE_VERSION:
             logger.error("Using dali2mqtt requires newest hasseb firmware")
+            logger.error("Current firmware: %s < Required: %s", dali_driver.firmware_version, MIN_HASSEB_FIRMWARE_VERSION)
             logger.error(
                 "Please, look at https://github.com/hasseb/python-dali/tree/master/dali/driver/hasseb_firmware"
             )
