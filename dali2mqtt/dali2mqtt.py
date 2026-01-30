@@ -418,10 +418,7 @@ async def on_bridge_status_change(mqtt_client, data_object, new_status):
     
 def on_message_cmd_callback(mqtt_client, data_object, msg, loop):
         logger.debug("on_message_cmd_callback")
-        # loop = asyncio.get_event_loop()
-        # loop = asyncio.get_event_loop()
-        # loop.run_until_complete(on_connect(a, b, c, d, ha_prefix))
-        loop.create_task(on_message_cmd(mqtt_client, data_object, msg))
+        asyncio.run_coroutine_threadsafe(on_message_cmd(mqtt_client, data_object, msg), loop)
 
 
 async def on_message_cmd(mqtt_client, data_object, msg):
@@ -507,7 +504,7 @@ def get_lamp_object(data_object, light):
     
 def on_message_brightness_cmd_callback(mqtt_client, data_object, msg, loop):
         logger.info("on_message_brightness_cmd_callback")
-        loop.create_task(on_message_brightness_cmd(mqtt_client, data_object, msg))
+        asyncio.run_coroutine_threadsafe(on_message_brightness_cmd(mqtt_client, data_object, msg), loop)
         
 async def on_message_brightness_cmd(mqtt_client, data_object, msg):
     """Callback on MQTT brightness command message."""
@@ -576,7 +573,7 @@ async def on_message_brightness_cmd(mqtt_client, data_object, msg):
         
 def on_message_tc_cmd_callback(mqtt_client, data_object, msg, loop):
         logger.info("on_message_tc_cmd_callback")
-        loop.create_task(on_message_tc_cmd(mqtt_client, data_object, msg))
+        asyncio.run_coroutine_threadsafe(on_message_tc_cmd(mqtt_client, data_object, msg), loop)
         
 async def on_message_tc_cmd(mqtt_client, data_object, msg):
     """Callback on MQTT TC command message."""
@@ -632,7 +629,7 @@ async def on_message_tc_cmd(mqtt_client, data_object, msg):
 
 def on_message_fade_time_cmd_callback(mqtt_client, data_object, msg, loop):
     logger.info("on_message_fade_time_cmd_callback")
-    loop.create_task(on_message_fade_time_cmd(mqtt_client, data_object, msg))
+    asyncio.run_coroutine_threadsafe(on_message_fade_time_cmd(mqtt_client, data_object, msg), loop)
 
 async def on_message_fade_time_cmd(mqtt_client, data_object, msg):
     """Callback on MQTT Fade Time command message."""
@@ -658,7 +655,7 @@ async def on_message_fade_time_cmd(mqtt_client, data_object, msg):
 
 def on_message_fade_rate_cmd_callback(mqtt_client, data_object, msg, loop):
     logger.info("on_message_fade_rate_cmd_callback")
-    loop.create_task(on_message_fade_rate_cmd(mqtt_client, data_object, msg))
+    asyncio.run_coroutine_threadsafe(on_message_fade_rate_cmd(mqtt_client, data_object, msg), loop)
 
 async def on_message_fade_rate_cmd(mqtt_client, data_object, msg):
     """Callback on MQTT Fade Rate command message."""
@@ -725,10 +722,7 @@ async def on_connect(
 
 def on_connect_callback(a, b, c, d, ha_prefix, loop):
         logger.info("on_connect_callback")
-        # loop = asyncio.get_event_loop()
-        # loop = asyncio.get_event_loop()
-        # loop.run_until_complete(on_connect(a, b, c, d, ha_prefix))
-        loop.create_task(on_connect(a, b, c, d, ha_prefix))
+        asyncio.run_coroutine_threadsafe(on_connect(a, b, c, d, ha_prefix), loop)
 
 
 async def create_mqtt_client(
@@ -802,12 +796,12 @@ async def create_mqtt_client(
     
     mqttc.message_callback_add(
         MQTT_SCAN_LAMPS_COMMAND_TOPIC.format(mqtt_base_topic),
-        lambda a,b,c : loop.create_task(on_message_reinitialize_lamps_cmd(a,b,c)),
+        lambda a,b,c : asyncio.run_coroutine_threadsafe(on_message_reinitialize_lamps_cmd(a,b,c), loop),
     )
     
     mqttc.message_callback_add(
         f"{mqtt_base_topic}/bridge/request/restart",
-        lambda a,b,c : loop.create_task(on_message_restart_bridge_cmd(a,b,c)),
+        lambda a,b,c : asyncio.run_coroutine_threadsafe(on_message_restart_bridge_cmd(a,b,c), loop),
     )
 
     mqttc.on_message = on_message
