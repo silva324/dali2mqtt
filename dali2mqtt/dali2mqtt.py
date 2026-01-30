@@ -94,7 +94,7 @@ async def dali_scan(dali_driver):
                 # Double check to avoid ghosts (common with old firmware or noise)
                 try:
                      # Try to read physical minimum level as confirmation
-                     await dali_driver.send(gear.QueryPhysicalMinimumLevel(address.Short(lamp)))
+                     await dali_driver.send(gear.QueryPhysicalMinimum(address.Short(lamp)))
                      lamps.append(lamp)
                      logger.debug("Found lamp at address %d", lamp)
                 except DALIError:
