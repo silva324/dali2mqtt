@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.0](https://github.com/silva324/dali2mqtt/compare/v0.0.5...v0.1.0) (2026-04-15)
+
+
+### 🚦 Continuous Integration
+
+* update Docker image metadata extraction to include branch reference ([62402a1](https://github.com/silva324/dali2mqtt/commit/62402a1dc8199b198a898b56634d7e9272a8c275))
+
+
+### ✨ Features
+
+* add support for loading configuration from environment variables ([cb2859b](https://github.com/silva324/dali2mqtt/commit/cb2859b39cc7b13ae620bcfb6805b0e7f448fc8b))
+
+
+### 🐛 Bug Fixes
+
+* add env vars ([#10](https://github.com/silva324/dali2mqtt/issues/10)) ([e300457](https://github.com/silva324/dali2mqtt/commit/e30045779eb095df1bcb9cc38366ad587351fac6))
+* update default DALI driver name and improve configuration loading from environment variables ([d9b81ed](https://github.com/silva324/dali2mqtt/commit/d9b81ed179287aee8aeded7e753c3b0e253c5009))
+
 ## [0.0.5](https://github.com/silva324/dali2mqtt/compare/v0.0.4...v0.0.5) (2026-04-14)
 
 
