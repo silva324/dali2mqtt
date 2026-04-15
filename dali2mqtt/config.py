@@ -1,5 +1,6 @@
 """Configuration Object."""
 import logging
+import os
 
 import voluptuous as vol
 import yaml
@@ -7,6 +8,7 @@ from dali2mqtt.consts import (
     ALL_SUPPORTED_LOG_LEVELS,
     CONF_CONFIG,
     CONF_DALI_DRIVER,
+    CONF_DALI_LAMPS,
     CONF_DEVICES_NAMES_FILE,
     CONF_HA_DISCOVERY_PREFIX,
     CONF_LOG_COLOR,
@@ -73,6 +75,9 @@ class Config:
             logger.info("No configuration file, creating a new one")
             self._config = CONF_SCHEMA({})
 
+        # Overwrite with environment variables
+        self.load_env_vars()
+
         # Overwrite with command line arguments
         args_keys = vars(args)
         for key in args_keys:
@@ -86,6 +91,23 @@ class Config:
         watchdog_event_handler.on_modified = lambda event: self.load_config_file()
         self._watchdog_observer.schedule(watchdog_event_handler, self._path)
         self._watchdog_observer.start()
+
+    def load_env_vars(self):
+        """Override config with values from environment variables."""
+        int_keys = {CONF_MQTT_PORT, CONF_DALI_LAMPS}
+        bool_keys = {CONF_LOG_COLOR}
+        for key in self._config:
+            env_val = os.environ.get(key.upper())
+            if env_val is not None and env_val != "":
+                if key in int_keys:
+                    try:
+                        self._config[key] = int(env_val)
+                    except ValueError:
+                        logger.warning("Invalid integer for %s: %s", key.upper(), env_val)
+                elif key in bool_keys:
+                    self._config[key] = env_val.lower() in ("1", "true", "yes")
+                else:
+                    self._config[key] = env_val
 
     def load_config_file(self):
         """Load configuration from yaml file."""
