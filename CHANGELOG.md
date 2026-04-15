@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1](https://github.com/silva324/dali2mqtt/compare/v0.1.0...v0.1.1) (2026-04-15)
+
+
+### 🐛 Bug Fixes
+
+* make VERSION available at runtime ([#11](https://github.com/silva324/dali2mqtt/issues/11)) ([139c1a3](https://github.com/silva324/dali2mqtt/commit/139c1a39aa59088bdc83e0600934379650981568))
+* make VERSION available at runtime and update __version__ to use environment variable ([1516104](https://github.com/silva324/dali2mqtt/commit/1516104c9b5163fd59917be2729acb60418b4e6d))
+
 ## [0.1.0](https://github.com/silva324/dali2mqtt/compare/v0.0.5...v0.1.0) (2026-04-15)
 
 
