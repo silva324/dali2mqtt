@@ -68,22 +68,24 @@ class Config:
         self._callback = callback
         self._config = {}
 
-        # Load from file
+        # 1. Load raw values from file (no validation yet)
+        raw = self._load_raw_file()
+
+        # 2. Overlay environment variables
+        raw = self._merge_env_vars(raw)
+
+        # 3. Overlay CLI arguments
+        args_keys = {k: v for k, v in vars(args).items() if k != CONF_CONFIG}
+        raw.update(args_keys)
+
+        # 4. Validate the fully merged config once
         try:
-            self.load_config_file()
-        except FileNotFoundError:
-            logger.info("No configuration file, creating a new one")
-            self._config = CONF_SCHEMA({})
+            self._config = CONF_SCHEMA(raw)
+        except vol.MultipleInvalid as error:
+            logger.error("Invalid configuration: %s", error)
+            quit(1)
 
-        # Overwrite with environment variables
-        self.load_env_vars()
-
-        # Overwrite with command line arguments
-        args_keys = vars(args)
-        for key in args_keys:
-            if self._config.get(key) != args_keys[key]:
-                self._config[key] = args_keys[key]
-
+        self._config[CONF_CONFIG] = self._path
         self.save_config_file()
 
         self._watchdog_observer = Observer()
@@ -92,44 +94,56 @@ class Config:
         self._watchdog_observer.schedule(watchdog_event_handler, self._path)
         self._watchdog_observer.start()
 
-    def load_env_vars(self):
-        """Override config with values from environment variables."""
+    def _load_raw_file(self):
+        """Load raw config dict from yaml file without validation."""
+        try:
+            with open(self._path, "r") as infile:
+                logger.debug("Loading configuration from <%s>", self._path)
+                data = yaml.safe_load(infile)
+                if not data:
+                    logger.info("Empty or missing config file, using defaults")
+                    return {}
+                return dict(data)
+        except FileNotFoundError:
+            logger.info("No configuration file found, using defaults")
+            return {}
+
+    def _merge_env_vars(self, raw):
+        """Overlay environment variables onto a raw config dict."""
         int_keys = {CONF_MQTT_PORT, CONF_DALI_LAMPS}
         bool_keys = {CONF_LOG_COLOR}
-        for key in self._config:
+        # Check all known config keys, not just those already in raw
+        all_keys = {
+            CONF_MQTT_SERVER, CONF_MQTT_PORT, CONF_MQTT_USERNAME, CONF_MQTT_PASSWORD,
+            CONF_MQTT_BASE_TOPIC, CONF_DALI_DRIVER, CONF_DALI_LAMPS,
+            CONF_HA_DISCOVERY_PREFIX, CONF_DEVICES_NAMES_FILE,
+            CONF_LOG_LEVEL, CONF_LOG_COLOR,
+        }
+        for key in all_keys:
             env_val = os.environ.get(key.upper())
             if env_val is not None and env_val != "":
                 if key in int_keys:
                     try:
-                        self._config[key] = int(env_val)
+                        raw[key] = int(env_val)
                     except ValueError:
                         logger.warning("Invalid integer for %s: %s", key.upper(), env_val)
                 elif key in bool_keys:
-                    self._config[key] = env_val.lower() in ("1", "true", "yes")
+                    raw[key] = env_val.lower() in ("1", "true", "yes")
                 else:
-                    self._config[key] = env_val
+                    raw[key] = env_val
+        return raw
 
     def load_config_file(self):
-        """Load configuration from yaml file."""
-        with open(self._path, "r") as infile:
-            logger.debug("Loading configuration from <%s>", self._path)
-            try:
-                configuration = yaml.safe_load(infile)
-                if not configuration:
-                    logger.warning(
-                        "Could not load a configuration from %s, creating a new one",
-                        self._path,
-                    )
-                    configuration = {}
-                self._config = CONF_SCHEMA(configuration)
-                if self._callback:
-                    self._callback()
-            except AttributeError:
-                # No callback configured
-                pass
-            except vol.MultipleInvalid as error:
-                logger.error("In configuration file %s: %s", self._path, error)
-                quit(1)
+        """Reload configuration from yaml file, re-merging env vars."""
+        raw = self._load_raw_file()
+        raw = self._merge_env_vars(raw)
+        try:
+            self._config = CONF_SCHEMA(raw)
+            self._config[CONF_CONFIG] = self._path
+            if self._callback:
+                self._callback()
+        except vol.MultipleInvalid as error:
+            logger.error("In configuration file %s: %s", self._path, error)
 
     def save_config_file(self):
         """Save configuration back to yaml file."""
