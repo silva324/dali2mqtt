@@ -36,6 +36,9 @@ LABEL org.opencontainers.image.title="dali2mqtt" \
     org.opencontainers.image.revision="${VCS_REF}" \
     org.opencontainers.image.created="${BUILD_DATE}" \
     org.opencontainers.image.source="${SOURCE_URL}"
+
+# Make VERSION available at runtime
+ENV VERSION=${VERSION}
     
 # Install only runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

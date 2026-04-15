@@ -2,8 +2,10 @@
 
 import logging
 
+import os
+
 __author__ = "Diogo Gomes"
-__version__ = "0.0.3"
+__version__ = os.environ.get("VERSION", "0.0.3")
 __email__ = "diogogomes@gmail.com"
 
 HID_HASSEB = "hid_hasseb"
