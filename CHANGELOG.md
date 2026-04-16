@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/silva324/dali2mqtt/compare/v0.1.1...v0.2.0) (2026-04-16)
+
+
+### ✨ Features
+
+* add entrypoint script to install udev rules and update Dockerfile ([3119edc](https://github.com/silva324/dali2mqtt/commit/3119edc59e70acbd57ad0dfefd5a2ac59936df02))
+
+
+### 🐛 Bug Fixes
+
+* add entrypoint script to install udev rules and update Dockerfile ([#13](https://github.com/silva324/dali2mqtt/issues/13)) ([abbc359](https://github.com/silva324/dali2mqtt/commit/abbc3590758f0a7a966a15a75bf1e259c6cd5911))
+
 ## [0.1.1](https://github.com/silva324/dali2mqtt/compare/v0.1.0...v0.1.1) (2026-04-15)
 
 
