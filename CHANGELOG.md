@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/silva324/dali2mqtt/compare/v0.2.0...v0.2.1) (2026-05-04)
+
+
+### 🐛 Bug Fixes
+
+* update .dockerignore to include 50-hasseb.rules ([#15](https://github.com/silva324/dali2mqtt/issues/15)) ([17345ce](https://github.com/silva324/dali2mqtt/commit/17345ce2d4683d07d68faa523a834023f8cc08e5))
+* update .dockerignore to include 50-hasseb.rules and modify consts.py for version override ([99b4d46](https://github.com/silva324/dali2mqtt/commit/99b4d46c05597e51268acff7ef5244a342563cc4))
+
 ## [0.2.0](https://github.com/silva324/dali2mqtt/compare/v0.1.1...v0.2.0) (2026-04-16)
 
 
