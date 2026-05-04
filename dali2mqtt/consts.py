@@ -1,12 +1,14 @@
 """Constants common the various modules."""
 
 import logging
+import os
 
 import os
 
 __author__ = "Diogo Gomes"
-__version__ = os.environ.get("VERSION", "0.0.3")
-__email__ = "diogogomes@gmail.com"
+__version__ = "0.0.3"  # Updated by release-please — do not change this line format
+__version__ = os.environ.get("VERSION", __version__)  # Runtime override from Docker build arg
+__email__ = "silva324@gmail.com"
 
 HID_HASSEB = "hid_hasseb"
 HID_TRIDONIC = "hid_tridonic"
