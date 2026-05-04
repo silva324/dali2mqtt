@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.2.0](https://github.com/silva324/dali2mqtt/compare/v0.1.1...v0.2.0) (2026-04-16)
+
+
+### ✨ Features
+
+* add entrypoint script to install udev rules and update Dockerfile ([3119edc](https://github.com/silva324/dali2mqtt/commit/3119edc59e70acbd57ad0dfefd5a2ac59936df02))
+
+
+### 🐛 Bug Fixes
+
+* add entrypoint script to install udev rules and update Dockerfile ([#13](https://github.com/silva324/dali2mqtt/issues/13)) ([abbc359](https://github.com/silva324/dali2mqtt/commit/abbc3590758f0a7a966a15a75bf1e259c6cd5911))
+
+## [0.1.1](https://github.com/silva324/dali2mqtt/compare/v0.1.0...v0.1.1) (2026-04-15)
+
+
+### 🐛 Bug Fixes
+
+* make VERSION available at runtime ([#11](https://github.com/silva324/dali2mqtt/issues/11)) ([139c1a3](https://github.com/silva324/dali2mqtt/commit/139c1a39aa59088bdc83e0600934379650981568))
+* make VERSION available at runtime and update __version__ to use environment variable ([1516104](https://github.com/silva324/dali2mqtt/commit/1516104c9b5163fd59917be2729acb60418b4e6d))
+
+## [0.1.0](https://github.com/silva324/dali2mqtt/compare/v0.0.5...v0.1.0) (2026-04-15)
+
+
+### 🚦 Continuous Integration
+
+* update Docker image metadata extraction to include branch reference ([62402a1](https://github.com/silva324/dali2mqtt/commit/62402a1dc8199b198a898b56634d7e9272a8c275))
+
+
+### ✨ Features
+
+* add support for loading configuration from environment variables ([cb2859b](https://github.com/silva324/dali2mqtt/commit/cb2859b39cc7b13ae620bcfb6805b0e7f448fc8b))
+
+
+### 🐛 Bug Fixes
+
+* add env vars ([#10](https://github.com/silva324/dali2mqtt/issues/10)) ([e300457](https://github.com/silva324/dali2mqtt/commit/e30045779eb095df1bcb9cc38366ad587351fac6))
+* update default DALI driver name and improve configuration loading from environment variables ([d9b81ed](https://github.com/silva324/dali2mqtt/commit/d9b81ed179287aee8aeded7e753c3b0e253c5009))
+
 ## [0.0.5](https://github.com/silva324/dali2mqtt/compare/v0.0.4...v0.0.5) (2026-04-14)
 
 

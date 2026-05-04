@@ -3,10 +3,12 @@
 import logging
 import os
 
+import os
+
 __author__ = "Diogo Gomes"
 __version__ = "0.0.3"  # Updated by release-please — do not change this line format
 __version__ = os.environ.get("VERSION", __version__)  # Runtime override from Docker build arg
-__email__ = "diogogomes@gmail.com"
+__email__ = "silva324@gmail.com"
 
 HID_HASSEB = "hid_hasseb"
 HID_TRIDONIC = "hid_tridonic"
@@ -32,7 +34,7 @@ DEFAULT_MQTT_SERVER = "localhost"
 DEFAULT_MQTT_PORT = "1883"
 DEFAULT_MQTT_BASE_TOPIC = "dali2mqtt"
 DEFAULT_HA_DISCOVERY_PREFIX = "homeassistant"
-DEFAULT_DALI_DRIVER = "hasseb"
+DEFAULT_DALI_DRIVER = "hid_hasseb"
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_LOG_COLOR = False
 

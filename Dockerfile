@@ -36,6 +36,9 @@ LABEL org.opencontainers.image.title="dali2mqtt" \
     org.opencontainers.image.revision="${VCS_REF}" \
     org.opencontainers.image.created="${BUILD_DATE}" \
     org.opencontainers.image.source="${SOURCE_URL}"
+
+# Make VERSION available at runtime
+ENV VERSION=${VERSION}
     
 # Install only runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -62,14 +65,15 @@ WORKDIR /app
 # Copy application files
 COPY --chown=dali2mqtt:dali2mqtt dali2mqtt/ /app/dali2mqtt/
 COPY --chown=dali2mqtt:dali2mqtt config.yaml /app/config/config.yaml.example
-
-# Switch to non-root user
-USER dali2mqtt
+COPY 50-hasseb.rules /app/50-hasseb.rules
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
-# Run the application
-ENTRYPOINT ["python", "-m", "dali2mqtt.dali2mqtt"]
-CMD ["--config", "/app/config/config.yaml"]
+# Run as root so entrypoint can install udev rules, then app runs as root too
+# (container is privileged anyway)
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "-m", "dali2mqtt.dali2mqtt", "--config", "/app/config/config.yaml"]
