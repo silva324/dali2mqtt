@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/silva324/dali2mqtt/compare/v0.2.1...v0.3.0) (2026-05-13)
+
+
+### ✨ Features
+
+* add Home Assistant status handling for lamp rediscovery on restart ([4706231](https://github.com/silva324/dali2mqtt/commit/47062315cbb4a10634432f40b5efeebe814d2f46))
+* add Home Assistant status handling for lamp rediscovery on restart ([#17](https://github.com/silva324/dali2mqtt/issues/17)) ([cecb47e](https://github.com/silva324/dali2mqtt/commit/cecb47e44b0c69db94cddda8874acf7721fcca9f))
+
+
+### 🐛 Bug Fixes
+
+* remove unused HA_STATUS_TOPIC import ([fe4c5a1](https://github.com/silva324/dali2mqtt/commit/fe4c5a18c030c27369496dbb6d1960cff1417803))
+
 ## [0.2.1](https://github.com/silva324/dali2mqtt/compare/v0.2.0...v0.2.1) (2026-05-04)
 
 
