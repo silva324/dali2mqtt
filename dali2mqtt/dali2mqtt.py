@@ -70,7 +70,6 @@ from dali2mqtt.consts import (
     MQTT_PAYLOAD_ON,
     MQTT_SCAN_LAMPS_COMMAND_TOPIC,
     MQTT_STATE_TOPIC,
-    HA_STATUS_TOPIC,
     RED_COLOR,
     YELLOW_COLOR,
     __version__,
