@@ -40,6 +40,7 @@ from dali2mqtt.consts import (
     DALI_DRIVERS,
     DEFAULT_CONFIG_FILE,
     DEFAULT_HA_DISCOVERY_PREFIX,
+    HA_STATUS_TOPIC,
     HA_DISCOVERY_PREFIX,
     HA_DISCOVERY_PREFIX_NUMBER,
     HA_DISCOVERY_PREFIX_SENSOR,
@@ -476,6 +477,25 @@ async def on_message_reinitialize_lamps_cmd(mqtt_client, data_object, msg):
     await initialize_lamps(data_object, mqtt_client)
 
 
+def on_ha_status_callback(mqtt_client, data_object, msg, loop):
+    logger.info("on_ha_status_callback")
+    asyncio.run_coroutine_threadsafe(on_ha_status(mqtt_client, data_object, msg), loop)
+
+
+async def on_ha_status(mqtt_client, data_object, msg):
+    """Callback when Home Assistant publishes its online/offline status.
+
+    When HA restarts it publishes 'online' to <ha_prefix>/status.
+    We republish all discovery messages and current lamp states so HA
+    can rediscover every lamp without a bridge restart.
+    """
+    payload = msg.payload.decode("utf-8").strip()
+    logger.info("Home Assistant status: %s", payload)
+    if payload == MQTT_AVAILABLE:
+        logger.info("Home Assistant is online — republishing all lamp discovery and states")
+        await initialize_lamps(data_object, mqtt_client)
+
+
 async def on_message_restart_bridge_cmd(mqtt_client, data_object, msg):
     """Callback on MQTT restart bridge command message."""
     logger.info("Restart Bridge Command on %s", msg.topic)
@@ -703,6 +723,7 @@ async def on_connect(
             (MQTT_FADE_RATE_COMMAND_TOPIC.format(mqtt_base_topic, "+"), 0),
             (MQTT_SCAN_LAMPS_COMMAND_TOPIC.format(mqtt_base_topic), 0),
             (f"{mqtt_base_topic}/bridge/request/restart", 0),
+            (HA_STATUS_TOPIC.format(ha_prefix), 0),
         ]
     )
     client.publish(
@@ -802,6 +823,11 @@ async def create_mqtt_client(
     mqttc.message_callback_add(
         f"{mqtt_base_topic}/bridge/request/restart",
         lambda a,b,c : asyncio.run_coroutine_threadsafe(on_message_restart_bridge_cmd(a,b,c), loop),
+    )
+
+    mqttc.message_callback_add(
+        HA_STATUS_TOPIC.format(ha_prefix),
+        lambda a, b, c: on_ha_status_callback(a, b, c, loop),
     )
 
     mqttc.on_message = on_message
