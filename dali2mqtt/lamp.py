@@ -321,7 +321,7 @@ class Lamp:
         
         json_config = {
             "name": self.friendly_name,
-            "def_ent_id": f"dali_light_{self.device_name}",
+            "object_id": slugify(self.friendly_name),
             "uniq_id": unique_id,
             "stat_t": MQTT_STATE_TOPIC.format(mqtt_base_topic, self.device_name),
             "cmd_t": MQTT_COMMAND_TOPIC.format(mqtt_base_topic, self.device_name),
