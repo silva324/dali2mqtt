@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1](https://github.com/silva324/dali2mqtt/compare/v0.3.0...v0.3.1) (2026-07-17)
+
+
+### 🐛 Bug Fixes
+
+* update Home Assistant configuration to use object_id instead of … ([#19](https://github.com/silva324/dali2mqtt/issues/19)) ([6ed5ad6](https://github.com/silva324/dali2mqtt/commit/6ed5ad6330e5a447359405148ddd638947895e82))
+* update Home Assistant configuration to use object_id instead of def_ent_id ([d0c0fac](https://github.com/silva324/dali2mqtt/commit/d0c0facea8f9008e103d499d7e1bf7d7deb91d78))
+* update release-please-action to version 5.0.0 ([ff81f0c](https://github.com/silva324/dali2mqtt/commit/ff81f0c57e8ccb057887d513b13a948f98530727))
+
 ## [0.3.0](https://github.com/silva324/dali2mqtt/compare/v0.2.1...v0.3.0) (2026-05-13)
 
 
